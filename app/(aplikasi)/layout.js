@@ -66,7 +66,15 @@ function KontenAplikasi({ children }) {
 export default function LayoutAplikasi({ children }) {
   return (
     <PenggunaProvider>
-      <KontenAplikasi>{children}</KontenAplikasi>
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center bg-latar p-8">
+            <Memuat />
+          </div>
+        }
+      >
+        <KontenAplikasi>{children}</KontenAplikasi>
+      </Suspense>
     </PenggunaProvider>
   );
 }
