@@ -2,27 +2,48 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  updateProfile,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { singkronkanPengguna } from "@/lib/data";
 import KerangkaPublik from "@/components/KerangkaPublik";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+function terjemahkanGalat(err) {
+  switch (err?.code) {
+    case "auth/email-already-in-use":
+      return "Email ini sudah terdaftar. Silakan masuk.";
+    case "auth/invalid-email":
+      return "Format email tidak valid.";
+    case "auth/weak-password":
+      return "Kata sandi terlalu lemah. Gunakan minimal 6 karakter.";
+    case "auth/popup-closed-by-user":
+      return "Jendela pendaftaran Google ditutup sebelum selesai.";
+    case "auth/operation-not-allowed":
+      return "Metode pendaftaran ini belum diaktifkan di Firebase Console.";
+    case "auth/unauthorized-domain":
+      return "Domain ini belum didaftarkan di Authorized Domains Firebase Console.";
+    default:
+      return err?.message || "Terjadi kesalahan saat pendaftaran.";
+  }
+}
 
-/**
- * Halaman Daftar (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-up page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
+// Halaman Daftar (PRD 4.1) / Sign-up page (PRD 4.1)
 export default function HalamanDaftar() {
+  const router = useRouter();
   const [nama, setNama] = useState("");
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangProses, setSedangProses] = useState(false);
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!nama.trim()) g.nama = "Nama wajib diisi.";
     if (!email.trim()) g.email = "Email wajib diisi.";
@@ -32,11 +53,47 @@ export default function HalamanDaftar() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    setSedangProses(true);
+    setPesan("");
+    try {
+      const userCred = await createUserWithEmailAndPassword(auth, email.trim(), kataSandi);
+      const user = userCred.user;
+
+      try {
+        await updateProfile(user, { displayName: nama.trim() });
+      } catch (profileErr) {
+        console.warn("Gagal memperbarui displayName auth:", profileErr);
+      }
+
+      // Sinkronkan dokumen profil ke users/{uid} dan hapus placeholder lama jika ada
+      await singkronkanPengguna(user, nama.trim());
+
+      router.push("/beranda");
+    } catch (err) {
+      setPesan(terjemahkanGalat(err));
+    } finally {
+      setSedangProses(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setSedangProses(true);
+    setPesan("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const res = await signInWithPopup(auth, provider);
+      const user = res.user;
+
+      // Sinkronkan dokumen profil ke users/{uid} dan hapus placeholder lama jika ada
+      await singkronkanPengguna(user);
+
+      router.push("/beranda");
+    } catch (err) {
+      setPesan(terjemahkanGalat(err));
+    } finally {
+      setSedangProses(false);
+    }
   }
 
   return (
@@ -50,6 +107,7 @@ export default function HalamanDaftar() {
             value={nama}
             onChange={(e) => setNama(e.target.value)}
             className="isian"
+            disabled={sedangProses}
           />
           {galat.nama && <p className="galat">{galat.nama}</p>}
         </div>
@@ -62,6 +120,7 @@ export default function HalamanDaftar() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="isian"
+            disabled={sedangProses}
           />
           {galat.email && <p className="galat">{galat.email}</p>}
         </div>
@@ -74,10 +133,11 @@ export default function HalamanDaftar() {
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
             className="isian"
+            disabled={sedangProses}
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
+        <button type="submit" disabled={sedangProses} className="tombol-utama w-full py-3 text-lg disabled:opacity-50">
           Daftar
         </button>
       </form>
@@ -88,7 +148,7 @@ export default function HalamanDaftar() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button type="button" onClick={masukGoogle} disabled={sedangProses} className="tombol-kedua w-full py-3 disabled:opacity-50">
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>

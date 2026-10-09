@@ -3,21 +3,25 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
+import { ajukanCuti } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 
 const kosong = { tanggalMulai: "", tanggalSelesai: "", alasan: "" };
 
-// Ajukan Cuti (PRD 4.4.1). Belum menyimpan ke Firestore / Submit leave (PRD 4.4.1). Not saved to Firestore yet
+// Ajukan Cuti (PRD 4.4.1) / Submit leave (PRD 4.4.1)
 export default function HalamanAjukanCuti() {
   const router = useRouter();
+  const { pengguna } = usePengguna();
   const [isian, setIsian] = useState(kosong);
   const [galat, setGalat] = useState({});
   const [tersimpan, setTersimpan] = useState(false);
+  const [sedangKirim, setSedangKirim] = useState(false);
 
   const ubah = (e) => setIsian({ ...isian, [e.target.name]: e.target.value });
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
     const g = {};
     if (!isian.tanggalMulai) g.tanggalMulai = "Tanggal mulai wajib diisi.";
@@ -29,12 +33,24 @@ export default function HalamanAjukanCuti() {
     setGalat(g);
     if (Object.keys(g).length > 0) return;
 
-    setTersimpan(true);
-    setTimeout(() => {
-      setIsian(kosong);
-      setTersimpan(false);
-      router.push("/cuti");
-    }, 1500);
+    setSedangKirim(true);
+    try {
+      const baru = await ajukanCuti({
+        karyawanId: pengguna.uid,
+        tanggalMulai: isian.tanggalMulai,
+        tanggalSelesai: isian.tanggalSelesai,
+        alasan: isian.alasan,
+      });
+      setTersimpan(true);
+      setTimeout(() => {
+        setIsian(kosong);
+        setTersimpan(false);
+        router.push(baru?.id ? `/cuti/${baru.id}` : "/cuti");
+      }, 1000);
+    } catch (err) {
+      alert("Gagal mengajukan cuti: " + (err.message || "Terjadi kesalahan"));
+      setSedangKirim(false);
+    }
   }
 
   return (
@@ -65,12 +81,12 @@ export default function HalamanAjukanCuti() {
           {galat.alasan && <p className="galat">{galat.alasan}</p>}
         </div>
 
-        <button type="submit" disabled={tersimpan} className="tombol-utama px-8 py-3 text-lg">
+        <button type="submit" disabled={sedangKirim || tersimpan} className="tombol-utama px-8 py-3 text-lg disabled:opacity-50">
           Kirim
         </button>
         {tersimpan && (
           <p role="status" className="rounded-xl border border-disetujui bg-disetujui/15 p-3 font-bold text-tinta">
-            Tersimpan (contoh). Kembali ke Daftar Cuti...
+            Pengajuan berhasil disimpan. Membuka rincian cuti...
           </p>
         )}
       </form>

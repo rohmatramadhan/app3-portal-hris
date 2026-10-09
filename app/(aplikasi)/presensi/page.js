@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilPresensi } from "@/lib/data";
-import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat } from "@/lib/waktu";
+import { ambilPresensi, ambilPresensiTanggal, catatMasuk, catatPulang } from "@/lib/data";
+import { bulanIni, formatBulan, formatJam, formatTanggal, tanggalHariIni, terlambat } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
@@ -22,11 +22,61 @@ export default function HalamanPresensi() {
   const dariAlamat = searchParams.get("bulan");
   const bulan = /^\d{4}-\d{2}$/.test(dariAlamat ?? "") ? dariAlamat : bulanIni();
 
-  const { status, data, cobaLagi } = useAmbilData(() => ambilPresensi(pengguna.uid, bulan), [pengguna.uid, bulan]);
+  const { status, data, cobaLagi } = useAmbilData(
+    () => (pengguna?.uid ? ambilPresensi(pengguna.uid, bulan) : Promise.resolve([])),
+    [pengguna?.uid, bulan]
+  );
 
-  // Catat Masuk/Pulang hanya mengubah tampilan, belum menyimpan / Clock in/out only changes the screen, nothing is saved yet
   const [jamMasuk, setJamMasuk] = useState(null);
   const [jamPulang, setJamPulang] = useState(null);
+  const [sedangProses, setSedangProses] = useState(false);
+
+  // Memuat data presensi hari ini dari Firestore
+  useEffect(() => {
+    let aktif = true;
+    async function muatHariIni() {
+      if (!pengguna?.uid) return;
+      try {
+        const presensiHariIni = await ambilPresensiTanggal(pengguna.uid, tanggalHariIni());
+        if (aktif && presensiHariIni) {
+          setJamMasuk(presensiHariIni.jamMasuk);
+          setJamPulang(presensiHariIni.jamPulang);
+        }
+      } catch (err) {
+        console.error("Gagal memuat presensi hari ini:", err);
+      }
+    }
+    muatHariIni();
+    return () => {
+      aktif = false;
+    };
+  }, [pengguna?.uid]);
+
+  async function handleCatatMasuk() {
+    setSedangProses(true);
+    try {
+      const hasil = await catatMasuk(pengguna.uid);
+      setJamMasuk(hasil.jamMasuk);
+      cobaLagi();
+    } catch (err) {
+      alert(err.message || "Gagal mencatat masuk.");
+    } finally {
+      setSedangProses(false);
+    }
+  }
+
+  async function handleCatatPulang() {
+    setSedangProses(true);
+    try {
+      const hasil = await catatPulang(pengguna.uid);
+      setJamPulang(hasil.jamPulang);
+      cobaLagi();
+    } catch (err) {
+      alert(err.message || "Gagal mencatat pulang.");
+    } finally {
+      setSedangProses(false);
+    }
+  }
 
   const jumlahTerlambat = data ? data.filter((p) => terlambat(p.jamMasuk)).length : 0;
 
@@ -44,20 +94,26 @@ export default function HalamanPresensi() {
           </p>
           {jamMasuk !== null && (
             <p className="mt-1 text-sm font-semibold text-redup">
-              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Contoh tampilan, belum tersimpan.
+              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}
+              {jamPulang !== null ? "Presensi hari ini selesai." : "Jangan lupa catat pulang saat selesai bekerja."}
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="button" onClick={() => setJamMasuk(new Date())} disabled={jamMasuk !== null} className="tombol-utama px-6 py-3 text-lg">
+          <button
+            type="button"
+            onClick={handleCatatMasuk}
+            disabled={jamMasuk !== null || sedangProses}
+            className="tombol-utama px-6 py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Ikon nama="masuk" />
             Catat Masuk
           </button>
           <button
             type="button"
-            onClick={() => setJamPulang(new Date())}
-            disabled={jamMasuk === null || jamPulang !== null}
-            className="tombol-kunyit px-6 py-3 text-lg"
+            onClick={handleCatatPulang}
+            disabled={jamMasuk === null || jamPulang !== null || sedangProses}
+            className="tombol-kunyit px-6 py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Ikon nama="keluar" />
             Catat Pulang

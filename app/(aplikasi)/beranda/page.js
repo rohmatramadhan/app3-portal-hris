@@ -16,14 +16,15 @@ export default function HalamanBeranda() {
 
   // Dua data diambil bersamaan / Both pieces of data are fetched together
   const { status, data, cobaLagi } = useAmbilData(async () => {
+    if (!pengguna?.uid) return null;
     // Tanggal dihitung di sini, bukan saat render, supaya tidak terkunci di tanggal build / Computed here, not during render, so it is not frozen at build date
     const hariIni = tanggalHariIni();
     const [presensi, cuti] = await Promise.all([
       ambilPresensiTanggal(pengguna.uid, hariIni),
       ambilPengajuanCuti(pengguna.uid),
     ]);
-    return { hariIni, presensi, menunggu: cuti.filter((c) => c.status === "menunggu").length };
-  }, [pengguna.uid]);
+    return { hariIni, presensi, menunggu: (cuti ?? []).filter((c) => c.status === "menunggu").length };
+  }, [pengguna?.uid]);
 
   let teksPresensi = "Belum presensi hari ini";
   if (data?.presensi?.jamPulang) teksPresensi = "Sudah pulang";
@@ -32,7 +33,7 @@ export default function HalamanBeranda() {
   return (
     <div className="space-y-8">
       <KepalaHalaman
-        judul={`Halo, ${pengguna.nama}!`}
+        judul={`Halo, ${pengguna?.nama || ""}!`}
         keterangan={data ? formatTanggal(data.hariIni) : "Ringkasan hari ini"}
         ikon="rumah"
       >
@@ -48,7 +49,7 @@ export default function HalamanBeranda() {
 
       {status === "memuat" && <Memuat />}
       {status === "gagal" && <Gagal onCobaLagi={cobaLagi} />}
-      {status === "berhasil" && (
+      {status === "berhasil" && data && (
         <div className="grid gap-6 sm:grid-cols-2">
           <Link href="/presensi" className="kartu group flex flex-col gap-4 p-6 transition hover:shadow-md">
             <span className="grid h-12 w-12 place-items-center rounded-xl border border-tinta/10 bg-sedap text-white">
