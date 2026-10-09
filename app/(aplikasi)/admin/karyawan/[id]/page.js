@@ -4,14 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilKaryawan } from "@/lib/data";
+import { ambilKaryawan, ubahPeranKaryawan } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
 import Kosong from "@/components/Kosong";
 import Gagal from "@/components/Gagal";
 
-// Rincian Karyawan (PRD 4.7) / Employee detail (PRD 4.7)
+// Rincian Karyawan (PRD 4.7)
 export default function HalamanRincianKaryawan() {
   const { id } = useParams();
   const { status, data: k, cobaLagi } = useAmbilData(() => ambilKaryawan(id), [id]);
@@ -32,8 +32,8 @@ export default function HalamanRincianKaryawan() {
           <Link href="/admin/karyawan" className="tombol-utama">Lihat Data Karyawan</Link>
         </Kosong>
       )}
-      {/* key={k.id} mengosongkan isian saat pindah ke karyawan lain / key={k.id} resets the form when switching employees */}
-      {status === "berhasil" && k && <FormPeran key={k.id} karyawan={k} />}
+      {/* key={k.id} mengosongkan isian saat pindah ke karyawan lain */}
+      {status === "berhasil" && k && <FormPeran key={k.id} karyawan={k} onPeranDiubah={cobaLagi} />}
     </div>
   );
 }
@@ -43,19 +43,29 @@ const pilihanPeran = [
   { nilai: "hrd", label: "HRD", keterangan: "Ditambah mengelola karyawan, memutuskan cuti, dan membaca laporan." },
 ];
 
-// Simpan hanya mengubah tampilan, belum menulis ke Firestore / Save only changes the screen, nothing is written to Firestore
-function FormPeran({ karyawan }) {
+function FormPeran({ karyawan, onPeranDiubah }) {
   const [peran, setPeran] = useState(karyawan.role);
   const [pesan, setPesan] = useState("");
+  const [sedangSimpan, setSedangSimpan] = useState(false);
 
-  function simpan(e) {
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(`Peran diubah menjadi ${peran === "hrd" ? "HRD" : "Karyawan"} (contoh, belum tersimpan).`);
+    try {
+      setSedangSimpan(true);
+      await ubahPeranKaryawan(karyawan.id, peran);
+      setPesan(`Peran ${karyawan.nama} berhasil diubah menjadi ${peran === "hrd" ? "HRD" : "Karyawan"}.`);
+      if (onPeranDiubah) onPeranDiubah();
+    } catch (err) {
+      console.error("Gagal mengubah peran karyawan:", err);
+      setPesan("Gagal memperbarui peran di Firestore.");
+    } finally {
+      setSedangSimpan(false);
+    }
   }
 
   return (
     <form onSubmit={simpan} className="kartu space-y-5 p-6">
-      {/* Pilihan peran berupa kartu radio supaya akibat tiap peran terbaca / Role options as radio cards so each role's effect is readable */}
+      {/* Pilihan peran berupa kartu radio supaya akibat tiap peran terbaca */}
       <fieldset>
         <legend className="label">Peran</legend>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -84,7 +94,9 @@ function FormPeran({ karyawan }) {
         </div>
       </fieldset>
       <div className="flex flex-wrap items-center gap-4">
-        <button type="submit" className="tombol-utama px-8">Simpan</button>
+        <button type="submit" disabled={sedangSimpan} className="tombol-utama px-8">
+          {sedangSimpan ? "Menyimpan..." : "Simpan"}
+        </button>
         {pesan && <p role="status" className="font-bold text-tinta">{pesan}</p>}
       </div>
     </form>
