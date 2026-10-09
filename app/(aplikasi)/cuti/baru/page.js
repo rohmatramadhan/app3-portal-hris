@@ -3,13 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
+import { tambahPengajuanCuti } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 
 const kosong = { tanggalMulai: "", tanggalSelesai: "", alasan: "" };
 
-// Ajukan Cuti (PRD 4.4.1). Belum menyimpan ke Firestore / Submit leave (PRD 4.4.1). Not saved to Firestore yet
+// Ajukan Cuti (PRD 4.4.1) tersimpan ke Firestore
 export default function HalamanAjukanCuti() {
+  const { pengguna } = usePengguna();
   const router = useRouter();
   const [isian, setIsian] = useState(kosong);
   const [galat, setGalat] = useState({});
@@ -17,7 +20,7 @@ export default function HalamanAjukanCuti() {
 
   const ubah = (e) => setIsian({ ...isian, [e.target.name]: e.target.value });
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
     const g = {};
     if (!isian.tanggalMulai) g.tanggalMulai = "Tanggal mulai wajib diisi.";
@@ -30,11 +33,23 @@ export default function HalamanAjukanCuti() {
     if (Object.keys(g).length > 0) return;
 
     setTersimpan(true);
-    setTimeout(() => {
-      setIsian(kosong);
+    try {
+      await tambahPengajuanCuti({
+        karyawanId: pengguna.uid,
+        tanggalMulai: isian.tanggalMulai,
+        tanggalSelesai: isian.tanggalSelesai,
+        alasan: isian.alasan.trim(),
+      });
+      setTimeout(() => {
+        setIsian(kosong);
+        setTersimpan(false);
+        router.push("/cuti");
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      setGalat({ umum: "Gagal menyimpan pengajuan cuti." });
       setTersimpan(false);
-      router.push("/cuti");
-    }, 1500);
+    }
   }
 
   return (
@@ -70,7 +85,7 @@ export default function HalamanAjukanCuti() {
         </button>
         {tersimpan && (
           <p role="status" className="rounded-xl border border-disetujui bg-disetujui/15 p-3 font-bold text-tinta">
-            Tersimpan (contoh). Kembali ke Daftar Cuti...
+            Pengajuan berhasil disimpan. Kembali ke Daftar Cuti...
           </p>
         )}
       </form>

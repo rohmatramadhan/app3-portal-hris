@@ -1,10 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { usePengguna } from "@/lib/pengguna";
+import Ikon from "./Ikon";
 
 export default function BilahAtas() {
   const { pengguna } = usePengguna();
+  const router = useRouter();
+
+  async function handleKeluar() {
+    try {
+      await signOut(auth);
+      router.push("/masuk");
+    } catch (err) {
+      console.error("Gagal keluar:", err);
+    }
+  }
 
   return (
     <header className="flex items-center justify-between gap-4 bg-sedap px-4 py-3 text-white md:px-6">
@@ -24,6 +38,15 @@ export default function BilahAtas() {
           <span className="grid h-10 w-10 place-items-center rounded-full border border-tinta/10 bg-krem font-bold text-tinta">
             {pengguna.nama.charAt(0)}
           </span>
+          <button
+            type="button"
+            onClick={handleKeluar}
+            title="Keluar"
+            aria-label="Keluar dari akun"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white"
+          >
+            <Ikon nama="keluar" className="h-5 w-5" />
+          </button>
         </div>
       )}
     </header>

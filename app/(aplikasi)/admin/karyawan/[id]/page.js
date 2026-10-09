@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilKaryawan } from "@/lib/data";
+import { ambilKaryawan, ubahPeranKaryawan } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
@@ -33,7 +33,7 @@ export default function HalamanRincianKaryawan() {
         </Kosong>
       )}
       {/* key={k.id} mengosongkan isian saat pindah ke karyawan lain / key={k.id} resets the form when switching employees */}
-      {status === "berhasil" && k && <FormPeran key={k.id} karyawan={k} />}
+      {status === "berhasil" && k && <FormPeran key={k.id} karyawan={k} onBerhasil={cobaLagi} />}
     </div>
   );
 }
@@ -43,14 +43,25 @@ const pilihanPeran = [
   { nilai: "hrd", label: "HRD", keterangan: "Ditambah mengelola karyawan, memutuskan cuti, dan membaca laporan." },
 ];
 
-// Simpan hanya mengubah tampilan, belum menulis ke Firestore / Save only changes the screen, nothing is written to Firestore
-function FormPeran({ karyawan }) {
+// Peran tersimpan langsung ke Firestore
+function FormPeran({ karyawan, onBerhasil }) {
   const [peran, setPeran] = useState(karyawan.role);
   const [pesan, setPesan] = useState("");
+  const [menyimpan, setMenyimpan] = useState(false);
 
-  function simpan(e) {
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(`Peran diubah menjadi ${peran === "hrd" ? "HRD" : "Karyawan"} (contoh, belum tersimpan).`);
+    setMenyimpan(true);
+    try {
+      await ubahPeranKaryawan(karyawan.id, peran);
+      setPesan(`Peran diubah menjadi ${peran === "hrd" ? "HRD" : "Karyawan"} (tersimpan di Firestore).`);
+      if (onBerhasil) onBerhasil();
+    } catch (err) {
+      console.error(err);
+      setPesan("Gagal mengubah peran karyawan.");
+    } finally {
+      setMenyimpan(false);
+    }
   }
 
   return (
@@ -84,7 +95,7 @@ function FormPeran({ karyawan }) {
         </div>
       </fieldset>
       <div className="flex flex-wrap items-center gap-4">
-        <button type="submit" className="tombol-utama px-8">Simpan</button>
+        <button type="submit" disabled={menyimpan} className="tombol-utama px-8">Simpan</button>
         {pesan && <p role="status" className="font-bold text-tinta">{pesan}</p>}
       </div>
     </form>

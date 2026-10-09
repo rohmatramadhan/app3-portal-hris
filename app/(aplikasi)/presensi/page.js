@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilPresensi } from "@/lib/data";
-import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat } from "@/lib/waktu";
+import { ambilPresensi, ambilPresensiTanggal, catatPresensiMasuk, catatPresensiPulang } from "@/lib/data";
+import { bulanIni, formatBulan, formatJam, formatTanggal, tanggalHariIni, terlambat } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
@@ -22,11 +22,58 @@ export default function HalamanPresensi() {
   const dariAlamat = searchParams.get("bulan");
   const bulan = /^\d{4}-\d{2}$/.test(dariAlamat ?? "") ? dariAlamat : bulanIni();
 
-  const { status, data, cobaLagi } = useAmbilData(() => ambilPresensi(pengguna.uid, bulan), [pengguna.uid, bulan]);
+  const { status, data, cobaLagi } = useAmbilData(
+    () => (pengguna?.uid ? ambilPresensi(pengguna.uid, bulan) : Promise.resolve([])),
+    [pengguna?.uid, bulan]
+  );
 
-  // Catat Masuk/Pulang hanya mengubah tampilan, belum menyimpan / Clock in/out only changes the screen, nothing is saved yet
+  // Catat Masuk/Pulang tersimpan ke Firestore
   const [jamMasuk, setJamMasuk] = useState(null);
   const [jamPulang, setJamPulang] = useState(null);
+  const [menyimpan, setMenyimpan] = useState(false);
+
+  useEffect(() => {
+    if (!pengguna?.uid) return;
+    let aktif = true;
+    const hariIni = tanggalHariIni();
+    ambilPresensiTanggal(pengguna.uid, hariIni).then((p) => {
+      if (aktif && p) {
+        setJamMasuk(p.jamMasuk);
+        setJamPulang(p.jamPulang);
+      }
+    });
+    return () => {
+      aktif = false;
+    };
+  }, [pengguna?.uid]);
+
+  async function tanganiMasuk() {
+    setMenyimpan(true);
+    const sekarang = new Date();
+    try {
+      await catatPresensiMasuk(pengguna.uid, tanggalHariIni(), sekarang);
+      setJamMasuk(sekarang);
+      cobaLagi();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMenyimpan(false);
+    }
+  }
+
+  async function tanganiPulang() {
+    setMenyimpan(true);
+    const sekarang = new Date();
+    try {
+      await catatPresensiPulang(pengguna.uid, tanggalHariIni(), sekarang);
+      setJamPulang(sekarang);
+      cobaLagi();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMenyimpan(false);
+    }
+  }
 
   const jumlahTerlambat = data ? data.filter((p) => terlambat(p.jamMasuk)).length : 0;
 
@@ -44,19 +91,24 @@ export default function HalamanPresensi() {
           </p>
           {jamMasuk !== null && (
             <p className="mt-1 text-sm font-semibold text-redup">
-              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Contoh tampilan, belum tersimpan.
+              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Presensi hari ini tersimpan.
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="button" onClick={() => setJamMasuk(new Date())} disabled={jamMasuk !== null} className="tombol-utama px-6 py-3 text-lg">
+          <button
+            type="button"
+            onClick={tanganiMasuk}
+            disabled={jamMasuk !== null || menyimpan}
+            className="tombol-utama px-6 py-3 text-lg"
+          >
             <Ikon nama="masuk" />
             Catat Masuk
           </button>
           <button
             type="button"
-            onClick={() => setJamPulang(new Date())}
-            disabled={jamMasuk === null || jamPulang !== null}
+            onClick={tanganiPulang}
+            disabled={jamMasuk === null || jamPulang !== null || menyimpan}
             className="tombol-kunyit px-6 py-3 text-lg"
           >
             <Ikon nama="keluar" />
@@ -76,7 +128,7 @@ export default function HalamanPresensi() {
               className="isian w-auto py-1.5"
             />
           </label>
-          {status === "berhasil" && (
+          {status === "berhasil" && data && (
             <div className="flex gap-3 tabular-nums">
               <span className="rounded-xl border border-tinta/10 bg-sedap px-4 py-1.5 font-bold text-white">
                 <span className="text-xl font-bold">{data.length}</span> hadir
@@ -91,10 +143,10 @@ export default function HalamanPresensi() {
         <div className="p-5">
           {status === "memuat" && <Memuat />}
           {status === "gagal" && <Gagal onCobaLagi={cobaLagi} />}
-          {status === "berhasil" && data.length === 0 && (
+          {status === "berhasil" && (!data || data.length === 0) && (
             <Kosong teks={`Belum ada catatan presensi di ${formatBulan(bulan)}. Pilih bulan lain untuk melihat riwayat.`} />
           )}
-          {status === "berhasil" && data.length > 0 && (
+          {status === "berhasil" && data && data.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-tinta/10">
               <table className="tabel">
                 <thead>

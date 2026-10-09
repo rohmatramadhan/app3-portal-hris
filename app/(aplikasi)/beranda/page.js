@@ -12,18 +12,24 @@ import Gagal from "@/components/Gagal";
 
 // Beranda karyawan (PRD 4.2) / Employee home (PRD 4.2)
 export default function HalamanBeranda() {
-  const { pengguna } = usePengguna();
+  const { pengguna, memuat: memuatPengguna } = usePengguna();
 
   // Dua data diambil bersamaan / Both pieces of data are fetched together
   const { status, data, cobaLagi } = useAmbilData(async () => {
-    // Tanggal dihitung di sini, bukan saat render, supaya tidak terkunci di tanggal build / Computed here, not during render, so it is not frozen at build date
     const hariIni = tanggalHariIni();
+    if (!pengguna?.uid) {
+      return { hariIni, presensi: null, menunggu: 0 };
+    }
     const [presensi, cuti] = await Promise.all([
       ambilPresensiTanggal(pengguna.uid, hariIni),
       ambilPengajuanCuti(pengguna.uid),
     ]);
-    return { hariIni, presensi, menunggu: cuti.filter((c) => c.status === "menunggu").length };
-  }, [pengguna.uid]);
+    return {
+      hariIni,
+      presensi,
+      menunggu: (cuti || []).filter((c) => c.status === "menunggu").length,
+    };
+  }, [pengguna?.uid]);
 
   let teksPresensi = "Belum presensi hari ini";
   if (data?.presensi?.jamPulang) teksPresensi = "Sudah pulang";
@@ -32,7 +38,7 @@ export default function HalamanBeranda() {
   return (
     <div className="space-y-8">
       <KepalaHalaman
-        judul={`Halo, ${pengguna.nama}!`}
+        judul={`Halo, ${pengguna?.nama || "Karyawan"}!`}
         keterangan={data ? formatTanggal(data.hariIni) : "Ringkasan hari ini"}
         ikon="rumah"
       >
@@ -46,9 +52,9 @@ export default function HalamanBeranda() {
         </Link>
       </KepalaHalaman>
 
-      {status === "memuat" && <Memuat />}
+      {(memuatPengguna || status === "memuat") && <Memuat />}
       {status === "gagal" && <Gagal onCobaLagi={cobaLagi} />}
-      {status === "berhasil" && (
+      {!memuatPengguna && status === "berhasil" && data && (
         <div className="grid gap-6 sm:grid-cols-2">
           <Link href="/presensi" className="kartu group flex flex-col gap-4 p-6 transition hover:shadow-md">
             <span className="grid h-12 w-12 place-items-center rounded-xl border border-tinta/10 bg-sedap text-white">
@@ -68,7 +74,7 @@ export default function HalamanBeranda() {
             <div>
               <p className="text-sm font-semibold tracking-wide text-tinta uppercase">Cuti menunggu</p>
               <p className="mt-1 text-tinta">
-                <span className="text-5xl font-bold tabular-nums">{data.menunggu}</span>
+                <span className="text-5xl font-bold tabular-nums">{data?.menunggu ?? 0}</span>
                 <span className="ml-2 text-lg font-bold">pengajuan</span>
               </p>
             </div>
