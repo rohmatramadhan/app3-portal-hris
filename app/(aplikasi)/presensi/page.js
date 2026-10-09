@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilPresensi } from "@/lib/data";
-import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat } from "@/lib/waktu";
+import { ambilPresensi, ambilPresensiTanggal, catatPresensiMasuk, catatPresensiPulang } from "@/lib/data";
+import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat, tanggalHariIni } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
@@ -14,7 +14,7 @@ import Gagal from "@/components/Gagal";
 
 // Presensi Saya (PRD 4.3) / My Attendance (PRD 4.3)
 export default function HalamanPresensi() {
-  const { pengguna } = usePengguna();
+  const { pengguna, memuat } = usePengguna();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -22,11 +22,57 @@ export default function HalamanPresensi() {
   const dariAlamat = searchParams.get("bulan");
   const bulan = /^\d{4}-\d{2}$/.test(dariAlamat ?? "") ? dariAlamat : bulanIni();
 
-  const { status, data, cobaLagi } = useAmbilData(() => ambilPresensi(pengguna.uid, bulan), [pengguna.uid, bulan]);
+  const { status, data, cobaLagi } = useAmbilData(
+    () => (pengguna?.uid ? ambilPresensi(pengguna.uid, bulan) : Promise.resolve([])),
+    [pengguna?.uid, bulan]
+  );
 
-  // Catat Masuk/Pulang hanya mengubah tampilan, belum menyimpan / Clock in/out only changes the screen, nothing is saved yet
-  const [jamMasuk, setJamMasuk] = useState(null);
-  const [jamPulang, setJamPulang] = useState(null);
+  const hariIni = tanggalHariIni();
+  const [presensiHariIni, setPresensiHariIni] = useState(null);
+  const [sedangSimpan, setSedangSimpan] = useState(false);
+
+  useEffect(() => {
+    let aktif = true;
+    if (pengguna?.uid) {
+      ambilPresensiTanggal(pengguna.uid, hariIni).then((p) => {
+        if (aktif) setPresensiHariIni(p);
+      });
+    }
+    return () => {
+      aktif = false;
+    };
+  }, [pengguna?.uid, hariIni]);
+
+  if (memuat || !pengguna) {
+    return <Memuat />;
+  }
+
+  const jamMasuk = presensiHariIni?.jamMasuk ?? null;
+  const jamPulang = presensiHariIni?.jamPulang ?? null;
+
+  async function handleCatatMasuk() {
+    setSedangSimpan(true);
+    try {
+      const sekarang = new Date();
+      await catatPresensiMasuk(pengguna.uid, hariIni, sekarang);
+      setPresensiHariIni({ karyawanId: pengguna.uid, tanggal: hariIni, jamMasuk: sekarang, jamPulang: null });
+      cobaLagi();
+    } finally {
+      setSedangSimpan(false);
+    }
+  }
+
+  async function handleCatatPulang() {
+    setSedangSimpan(true);
+    try {
+      const sekarang = new Date();
+      await catatPresensiPulang(pengguna.uid, hariIni, sekarang);
+      setPresensiHariIni((prev) => ({ ...prev, jamPulang: sekarang }));
+      cobaLagi();
+    } finally {
+      setSedangSimpan(false);
+    }
+  }
 
   const jumlahTerlambat = data ? data.filter((p) => terlambat(p.jamMasuk)).length : 0;
 
@@ -44,19 +90,24 @@ export default function HalamanPresensi() {
           </p>
           {jamMasuk !== null && (
             <p className="mt-1 text-sm font-semibold text-redup">
-              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Contoh tampilan, belum tersimpan.
+              {terlambat(jamMasuk) ? "Terlambat." : "Tepat waktu."}
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="button" onClick={() => setJamMasuk(new Date())} disabled={jamMasuk !== null} className="tombol-utama px-6 py-3 text-lg">
+          <button
+            type="button"
+            onClick={handleCatatMasuk}
+            disabled={jamMasuk !== null || sedangSimpan}
+            className="tombol-utama px-6 py-3 text-lg"
+          >
             <Ikon nama="masuk" />
             Catat Masuk
           </button>
           <button
             type="button"
-            onClick={() => setJamPulang(new Date())}
-            disabled={jamMasuk === null || jamPulang !== null}
+            onClick={handleCatatPulang}
+            disabled={jamMasuk === null || jamPulang !== null || sedangSimpan}
             className="tombol-kunyit px-6 py-3 text-lg"
           >
             <Ikon nama="keluar" />

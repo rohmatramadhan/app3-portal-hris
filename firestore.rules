@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isHrd() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
+    }
+
+    // Koleksi users: data profil dan peran
+    match /users/{userId} {
+      // Semua pengguna terautentikasi dapat membaca data user (untuk nama, avatar, dan daftar karyawan HRD)
+      allow read: if isAuthenticated();
+
+      // Pendaftaran mandiri: hanya bisa membuat dokumen miliknya sendiri dengan role "karyawan", atau dibuat oleh HRD
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == userId && request.resource.data.role == 'karyawan') ||
+        isHrd()
+      );
+
+      // Karyawan hanya boleh memperbarui profil miliknya tanpa mengubah peran (privilege escalation protection)
+      // HRD dapat memperbarui data dan peran siapa pun
+      allow update: if isAuthenticated() && (
+        isHrd() ||
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+      );
+
+      allow delete: if isHrd();
+    }
+
+    // Koleksi presensi: catatan kehadiran harian
+    match /presensi/{presensiId} {
+      allow read: if isAuthenticated() && (
+        isHrd() || resource.data.karyawanId == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() && (
+        request.resource.data.karyawanId == request.auth.uid || isHrd()
+      );
+
+      allow update: if isAuthenticated() && (
+        resource.data.karyawanId == request.auth.uid || isHrd()
+      );
+
+      allow delete: if isHrd();
+    }
+
+    // Koleksi pengajuan_cuti: formulir dan status cuti
+    match /pengajuan_cuti/{cutiId} {
+      allow read: if isAuthenticated() && (
+        isHrd() || resource.data.karyawanId == request.auth.uid
+      );
+
+      // Karyawan hanya bisa mengajukan cuti atas namanya sendiri dengan status awal "menunggu"
+      allow create: if isAuthenticated() && (
+        request.resource.data.karyawanId == request.auth.uid &&
+        request.resource.data.status == 'menunggu'
+      );
+
+      // Hanya HRD yang dapat memutuskan (mengubah status dan catatan) pengajuan cuti
+      allow update: if isHrd();
+
+      allow delete: if isHrd();
+    }
+
+    // Koleksi counters: penomoran atomik dokumen cuti (C001, C002, ...)
+    match /counters/{counterId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

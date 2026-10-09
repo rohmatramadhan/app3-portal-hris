@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
 import { ambilSatuPengajuan } from "@/lib/data";
+import { usePengguna } from "@/lib/pengguna";
 import { formatTanggal, formatJam, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
@@ -11,11 +12,31 @@ import Memuat from "@/components/Memuat";
 import Gagal from "@/components/Gagal";
 import Kosong from "@/components/Kosong";
 import PilStatus from "@/components/PilStatus";
+import AksesDitolak from "@/components/AksesDitolak";
 
 // Rincian Cuti (PRD 4.4.2) / Leave detail (PRD 4.4.2)
 export default function HalamanRincianCuti() {
   const { id } = useParams();
+  const { pengguna } = usePengguna();
   const { status, data: c, cobaLagi } = useAmbilData(() => ambilSatuPengajuan(id), [id]);
+
+  // Bukan pemilik dan bukan HRD: Tolak akses (PRD 1.1 / 403)
+  if (status === "berhasil" && c && pengguna && c.karyawanId !== pengguna.uid && pengguna.role !== "hrd") {
+    return (
+      <div className="max-w-2xl space-y-8">
+        <KepalaHalaman judul="Akses Ditolak" warna="kunyit" ikon="kalender">
+          <Link href="/cuti" className="tombol-kedua">
+            <Ikon nama="kembali" />
+            Daftar Cuti
+          </Link>
+        </KepalaHalaman>
+        <AksesDitolak
+          alasan="Kamu hanya bisa melihat pengajuan cuti milikmu sendiri."
+          kembaliKe="/cuti"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-8">

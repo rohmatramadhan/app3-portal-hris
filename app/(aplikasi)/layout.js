@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import BilahAtas from "@/components/BilahAtas";
 import MenuSamping from "@/components/MenuSamping";
 import Memuat from "@/components/Memuat";
+import PenjagaRute from "@/components/PenjagaRute";
 
 /**
  * Tata letak semua halaman setelah masuk. Halaman /masuk dan /daftar ada di luar
@@ -24,7 +25,9 @@ export default function LayoutAplikasi({ children }) {
         </aside>
         <main className="min-w-0 flex-1 p-4 md:p-8">
           <div className="mx-auto max-w-5xl">
-            <Suspense fallback={<Memuat />}>{children}</Suspense>
+            <Suspense fallback={<Memuat />}>
+              <PenjagaRute>{children}</PenjagaRute>
+            </Suspense>
           </div>
         </main>
       </div>
