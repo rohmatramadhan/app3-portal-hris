@@ -1,27 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { singkronkanPengguna } from "@/lib/data";
 import KerangkaPublik from "@/components/KerangkaPublik";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+function terjemahkanGalat(err) {
+  switch (err?.code) {
+    case "auth/invalid-credential":
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+      return "Email atau kata sandi salah.";
+    case "auth/invalid-email":
+      return "Format email tidak valid.";
+    case "auth/user-disabled":
+      return "Akun ini telah dinonaktifkan.";
+    case "auth/too-many-requests":
+      return "Terlalu banyak percobaan gagal. Silakan tunggu beberapa saat.";
+    case "auth/popup-closed-by-user":
+      return "Jendela masuk Google ditutup sebelum selesai.";
+    case "auth/operation-not-allowed":
+      return "Metode masuk ini belum diaktifkan di Firebase Console.";
+    case "auth/unauthorized-domain":
+      return "Domain ini belum didaftarkan di Authorized Domains Firebase Console.";
+    default:
+      return err?.message || "Terjadi kesalahan saat masuk.";
+  }
+}
 
-/**
- * Halaman Masuk (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-in page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
-export default function HalamanMasuk() {
+function FormulirMasuk() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const kembaliKe = searchParams.get("kembaliKe");
+
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangProses, setSedangProses] = useState(false);
 
-  function kirim(e) {
+  async function arahkanPengguna(uid) {
+    if (kembaliKe) {
+      router.push(kembaliKe);
+      return;
+    }
+
+    try {
+      const docSnap = await getDoc(doc(db, "users", uid));
+      if (docSnap.exists() && docSnap.data().role === "hrd") {
+        router.push("/admin");
+      } else {
+        router.push("/beranda");
+      }
+    } catch {
+      router.push("/beranda");
+    }
+  }
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
@@ -30,15 +71,45 @@ export default function HalamanMasuk() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    setSedangProses(true);
+    setPesan("");
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, email.trim(), kataSandi);
+      const user = userCred.user;
+
+      // Sinkronkan dokumen profil ke users/{uid} dan bersihkan placeholder lama jika ada
+      await singkronkanPengguna(user);
+
+      await arahkanPengguna(user.uid);
+    } catch (err) {
+      setPesan(terjemahkanGalat(err));
+    } finally {
+      setSedangProses(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setSedangProses(true);
+    setPesan("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const res = await signInWithPopup(auth, provider);
+      const user = res.user;
+
+      // Sinkronkan dokumen profil ke users/{uid} dan bersihkan placeholder lama jika ada
+      await singkronkanPengguna(user);
+
+      await arahkanPengguna(user.uid);
+    } catch (err) {
+      setPesan(terjemahkanGalat(err));
+    } finally {
+      setSedangProses(false);
+    }
   }
 
   return (
-    <KerangkaPublik judul="Masuk">
+    <>
       <form onSubmit={kirim} noValidate className="space-y-4">
         <div>
           <label htmlFor="email" className="label">Email</label>
@@ -49,6 +120,7 @@ export default function HalamanMasuk() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="isian"
+            disabled={sedangProses}
           />
           {galat.email && <p className="galat">{galat.email}</p>}
         </div>
@@ -61,10 +133,11 @@ export default function HalamanMasuk() {
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
             className="isian"
+            disabled={sedangProses}
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
+        <button type="submit" disabled={sedangProses} className="tombol-utama w-full py-3 text-lg disabled:opacity-50">
           Masuk
         </button>
       </form>
@@ -75,7 +148,7 @@ export default function HalamanMasuk() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button type="button" onClick={masukGoogle} disabled={sedangProses} className="tombol-kedua w-full py-3 disabled:opacity-50">
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>
@@ -92,6 +165,17 @@ export default function HalamanMasuk() {
           Daftar
         </Link>
       </p>
+    </>
+  );
+}
+
+// Halaman Masuk (PRD 4.1) / Sign-in page (PRD 4.1)
+export default function HalamanMasuk() {
+  return (
+    <KerangkaPublik judul="Masuk">
+      <Suspense fallback={<p className="text-sm font-semibold text-redup">Memuat formulir...</p>}>
+        <FormulirMasuk />
+      </Suspense>
     </KerangkaPublik>
   );
 }

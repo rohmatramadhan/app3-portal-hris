@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilSemuaPengajuan } from "@/lib/data";
+import { ambilSemuaPengajuan, putuskanPengajuanCuti } from "@/lib/data";
 import { formatTanggal, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
@@ -28,14 +28,25 @@ export default function HalamanPersetujuanCuti() {
 
   const { status: keadaan, data, cobaLagi } = useAmbilData(() => ambilSemuaPengajuan(status), [status]);
 
-  // Keputusan dan catatan hanya disimpan di tampilan / Decisions and notes are only kept on screen
+  // Keputusan dan catatan
   const [keputusan, setKeputusan] = useState({});
   const [catatan, setCatatan] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangProses, setSedangProses] = useState(false);
 
-  function putuskan(c, statusBaru) {
-    setKeputusan({ ...keputusan, [c.id]: statusBaru });
-    setPesan(`${c.id} milik ${c.nama} ${statusBaru} (contoh, belum tersimpan).`);
+  async function putuskan(c, statusBaru) {
+    setSedangProses(true);
+    const teksCatatan = catatan[c.id] ?? c.catatanHrd ?? "";
+    try {
+      await putuskanPengajuanCuti(c.id, { status: statusBaru, catatanHrd: teksCatatan });
+      setKeputusan((prev) => ({ ...prev, [c.id]: statusBaru }));
+      setPesan(`Pengajuan ${c.id} milik ${c.nama} telah ${statusBaru}.`);
+      cobaLagi();
+    } catch (err) {
+      alert("Gagal memutuskan pengajuan: " + (err.message || "Terjadi kesalahan"));
+    } finally {
+      setSedangProses(false);
+    }
   }
 
   // Pengajuan yang baru diputuskan keluar dari saringan Menunggu / Freshly decided requests drop out of the Menunggu filter
@@ -108,16 +119,26 @@ export default function HalamanPersetujuanCuti() {
                       <textarea
                         id={`catatan-${c.id}`}
                         rows={2}
-                        value={c.catatanHrd}
+                        value={catatan[c.id] ?? c.catatanHrd ?? ""}
                         onChange={(e) => setCatatan({ ...catatan, [c.id]: e.target.value })}
                         className="isian"
                       />
                       <div className="mt-3 flex flex-wrap gap-3">
-                        <button type="button" onClick={() => putuskan(c, "disetujui")} className="tombol-utama">
+                        <button
+                          type="button"
+                          disabled={sedangProses}
+                          onClick={() => putuskan(c, "disetujui")}
+                          className="tombol-utama disabled:opacity-50"
+                        >
                           <Ikon nama="centang" />
                           Setujui
                         </button>
-                        <button type="button" onClick={() => putuskan(c, "ditolak")} className="tombol border border-ditolak/40 bg-panel text-red-700 shadow-tipis hover:bg-ditolak/5">
+                        <button
+                          type="button"
+                          disabled={sedangProses}
+                          onClick={() => putuskan(c, "ditolak")}
+                          className="tombol border border-ditolak/40 bg-panel text-red-700 shadow-tipis hover:bg-ditolak/5 disabled:opacity-50"
+                        >
                           Tolak
                         </button>
                       </div>
