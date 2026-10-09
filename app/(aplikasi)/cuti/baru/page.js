@@ -5,24 +5,27 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
+import { usePengguna } from "@/lib/pengguna";
+import { buatPengajuanCuti } from "@/lib/data";
 
 const kosong = { tanggalMulai: "", tanggalSelesai: "", alasan: "" };
 
-// Ajukan Cuti (PRD 4.4.1). Belum menyimpan ke Firestore / Submit leave (PRD 4.4.1). Not saved to Firestore yet
+// Ajukan Cuti (PRD 4.4.1)
 export default function HalamanAjukanCuti() {
   const router = useRouter();
+  const { pengguna } = usePengguna();
   const [isian, setIsian] = useState(kosong);
   const [galat, setGalat] = useState({});
   const [tersimpan, setTersimpan] = useState(false);
 
   const ubah = (e) => setIsian({ ...isian, [e.target.name]: e.target.value });
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
     const g = {};
     if (!isian.tanggalMulai) g.tanggalMulai = "Tanggal mulai wajib diisi.";
     if (!isian.tanggalSelesai) g.tanggalSelesai = "Tanggal selesai wajib diisi.";
-    // Format "2026-10-07" bisa dibandingkan langsung sebagai teks / "2026-10-07" strings compare correctly as text
+    // Format "2026-10-07" bisa dibandingkan langsung sebagai teks
     else if (isian.tanggalMulai && isian.tanggalSelesai < isian.tanggalMulai)
       g.tanggalSelesai = "Tanggal selesai harus sama atau setelah tanggal mulai";
     if (!isian.alasan.trim()) g.alasan = "Alasan wajib diisi.";
@@ -30,11 +33,18 @@ export default function HalamanAjukanCuti() {
     if (Object.keys(g).length > 0) return;
 
     setTersimpan(true);
+    await buatPengajuanCuti({
+      karyawanId: pengguna?.uid || "dina",
+      tanggalMulai: isian.tanggalMulai,
+      tanggalSelesai: isian.tanggalSelesai,
+      alasan: isian.alasan.trim(),
+    });
+
     setTimeout(() => {
       setIsian(kosong);
       setTersimpan(false);
       router.push("/cuti");
-    }, 1500);
+    }, 1000);
   }
 
   return (
@@ -70,7 +80,7 @@ export default function HalamanAjukanCuti() {
         </button>
         {tersimpan && (
           <p role="status" className="rounded-xl border border-disetujui bg-disetujui/15 p-3 font-bold text-tinta">
-            Tersimpan (contoh). Kembali ke Daftar Cuti...
+            Pengajuan cuti berhasil disimpan. Kembali ke Daftar Cuti...
           </p>
         )}
       </form>

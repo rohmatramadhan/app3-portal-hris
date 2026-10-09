@@ -1,40 +1,156 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import KerangkaPublik from "@/components/KerangkaPublik";
+import Memuat from "@/components/Memuat";
+import { usePengguna } from "@/lib/pengguna";
+import { auth, db, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
+import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+function FormMasuk() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { pengguna, memuat, setPengguna } = usePengguna();
 
-/**
- * Halaman Masuk (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-in page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
-export default function HalamanMasuk() {
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangMemproses, setSedangMemproses] = useState(false);
 
-  function kirim(e) {
+  // Prompt 8: Pengguna yang sudah masuk lalu membuka /masuk diarahkan sesuai perannya
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      const kembali = searchParams.get("kembali");
+      if (kembali && (pengguna.role === "hrd" || !kembali.startsWith("/admin"))) {
+        router.replace(kembali);
+      } else if (pengguna.role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    }
+  }, [pengguna, memuat, router, searchParams]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
     setGalat(g);
-    if (Object.keys(g).length > 0) {
-      setPesan("");
-      return;
+    if (Object.keys(g).length > 0) return;
+
+    setSedangMemproses(true);
+    setPesan("");
+
+    try {
+      if (isFirebaseConfigured) {
+        // Masuk via Firebase Auth
+        const cred = await signInWithEmailAndPassword(auth, email.trim(), kataSandi);
+        // Baca role dari users/{uid} (Prompt 8)
+        const userRef = doc(db, "users", cred.user.uid);
+        const userSnap = await getDoc(userRef);
+        let role = "karyawan";
+        if (userSnap.exists()) {
+          role = userSnap.data().role || "karyawan";
+        } else {
+          // Buat profil jika belum ada
+          const profilBaru = {
+            nama: cred.user.displayName || email.split("@")[0],
+            email: cred.user.email,
+            role: "karyawan",
+          };
+          await setDoc(userRef, profilBaru);
+        }
+
+        const kembali = searchParams.get("kembali");
+        if (kembali && (role === "hrd" || !kembali.startsWith("/admin"))) {
+          router.push(kembali);
+        } else {
+          router.push(role === "hrd" ? "/admin" : "/beranda");
+        }
+      } else {
+        // Mode demo jika Firebase belum diisi di .env.local
+        const role = email.toLowerCase().includes("wulan") || email.toLowerCase().includes("hrd") ? "hrd" : "karyawan";
+        const nama = email.split("@")[0];
+        const dataDemo = {
+          uid: email.split("@")[0],
+          nama: nama.charAt(0).toUpperCase() + nama.slice(1),
+          email,
+          role,
+        };
+        setPengguna(dataDemo);
+        router.push(role === "hrd" ? "/admin" : "/beranda");
+      }
+    } catch (err) {
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/wrong-password"
+      ) {
+        setPesan("Email atau kata sandi salah.");
+      } else {
+        setPesan("Gagal masuk: " + (err.message || "Terjadi kesalahan."));
+      }
+    } finally {
+      setSedangMemproses(false);
     }
-    setPesan(PESAN_BELUM_DIPASANG);
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setSedangMemproses(true);
+    setPesan("");
+
+    try {
+      if (isFirebaseConfigured) {
+        // Masuk via Google Auth
+        const cred = await signInWithPopup(auth, googleProvider);
+        const userRef = doc(db, "users", cred.user.uid);
+        const userSnap = await getDoc(userRef);
+        let role = "karyawan";
+
+        if (userSnap.exists()) {
+          role = userSnap.data().role || "karyawan";
+        } else {
+          // Pengguna Google baru otomatis role "karyawan" (Prompt 5)
+          const namaPengguna = cred.user.displayName || cred.user.email?.split("@")[0] || "Pengguna";
+          const dataBaru = {
+            nama: namaPengguna,
+            email: cred.user.email || "",
+            role: "karyawan",
+          };
+          await setDoc(userRef, dataBaru);
+        }
+
+        const kembali = searchParams.get("kembali");
+        if (kembali && (role === "hrd" || !kembali.startsWith("/admin"))) {
+          router.push(kembali);
+        } else {
+          router.push(role === "hrd" ? "/admin" : "/beranda");
+        }
+      } else {
+        // Mode demo Google
+        const dataDemo = {
+          uid: "demo-google",
+          nama: "Pengguna Google",
+          email: "google@sedap.id",
+          role: "karyawan",
+        };
+        setPengguna(dataDemo);
+        router.push("/beranda");
+      }
+    } catch (err) {
+      if (err.code === "auth/popup-closed-by-user") {
+        setPesan("Jendela masuk Google ditutup.");
+      } else {
+        setPesan("Gagal masuk dengan Google: " + (err.message || "Terjadi kesalahan."));
+      }
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
   return (
@@ -49,6 +165,7 @@ export default function HalamanMasuk() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="isian"
+            placeholder="nama@sedap.id"
           />
           {galat.email && <p className="galat">{galat.email}</p>}
         </div>
@@ -61,11 +178,16 @@ export default function HalamanMasuk() {
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
             className="isian"
+            placeholder="Minimal 6 karakter"
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Masuk
+        <button
+          type="submit"
+          disabled={sedangMemproses}
+          className="tombol-utama w-full py-3 text-lg"
+        >
+          {sedangMemproses ? "Memproses..." : "Masuk"}
         </button>
       </form>
 
@@ -75,7 +197,12 @@ export default function HalamanMasuk() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={masukGoogle}
+        disabled={sedangMemproses}
+        className="tombol-kedua w-full py-3"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>
@@ -93,5 +220,13 @@ export default function HalamanMasuk() {
         </Link>
       </p>
     </KerangkaPublik>
+  );
+}
+
+export default function HalamanMasuk() {
+  return (
+    <Suspense fallback={<Memuat />}>
+      <FormMasuk />
+    </Suspense>
   );
 }
