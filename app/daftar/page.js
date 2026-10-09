@@ -1,28 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { daftarDenganEmail, masukDenganGoogle } from "@/lib/auth";
+import { usePengguna } from "@/lib/pengguna";
 import KerangkaPublik from "@/components/KerangkaPublik";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+function terjemahkanGalat(kode) {
+  if (kode === "auth/email-already-in-use") {
+    return "Email sudah terdaftar. Silakan masuk.";
+  }
+  if (kode === "auth/invalid-email") {
+    return "Format email tidak valid.";
+  }
+  if (kode === "auth/weak-password") {
+    return "Kata sandi terlalu lemah (minimal 6 karakter).";
+  }
+  if (kode === "auth/invalid-api-key" || kode === "auth/api-key-not-valid" || String(kode).includes("API key not valid")) {
+    return "Kunci API Firebase (API Key) tidak valid. Periksa file .env.local.";
+  }
+  if (kode === "auth/operation-not-allowed" || kode === "auth/configuration-not-found") {
+    return "Metode pendaftaran belum diaktifkan di Firebase Console.";
+  }
+  if (kode === "auth/popup-closed-by-user") {
+    return "Jendela pendaftaran Google ditutup sebelum selesai.";
+  }
+  return "Gagal mendaftar: " + kode;
+}
 
-/**
- * Halaman Daftar (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-up page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
-export default function HalamanDaftar() {
+function IsiHalamanDaftar() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const kembali = searchParams.get("kembali");
+  const { pengguna, memuat } = usePengguna();
   const [nama, setNama] = useState("");
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [memproses, setMemproses] = useState(false);
 
-  function kirim(e) {
+  const arahkanTujuan = useCallback(
+    (role) => {
+      if (kembali && kembali.startsWith("/") && !kembali.startsWith("//") && kembali !== "/masuk" && kembali !== "/daftar") {
+        router.push(kembali);
+        return;
+      }
+      if (role === "hrd") {
+        router.push("/admin");
+      } else {
+        router.push("/beranda");
+      }
+    },
+    [kembali, router]
+  );
+
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      arahkanTujuan(pengguna.role);
+    }
+  }, [memuat, pengguna, arahkanTujuan]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!nama.trim()) g.nama = "Nama wajib diisi.";
     if (!email.trim()) g.email = "Email wajib diisi.";
@@ -32,11 +73,30 @@ export default function HalamanDaftar() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    try {
+      setMemproses(true);
+      setPesan("");
+      const { role } = await daftarDenganEmail(email.trim(), kataSandi, nama.trim());
+      arahkanTujuan(role);
+    } catch (err) {
+      setPesan(terjemahkanGalat(err.code || err.message));
+    } finally {
+      setMemproses(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function handleMasukGoogle() {
+    try {
+      setMemproses(true);
+      setPesan("");
+      const { role } = await masukDenganGoogle();
+      arahkanTujuan(role);
+    } catch (err) {
+      setPesan(terjemahkanGalat(err.code || err.message));
+    } finally {
+      setMemproses(false);
+    }
   }
 
   return (
@@ -77,8 +137,8 @@ export default function HalamanDaftar() {
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Daftar
+        <button type="submit" disabled={memproses} className="tombol-utama w-full py-3 text-lg">
+          {memproses ? "Mendaftarkan..." : "Daftar"}
         </button>
       </form>
 
@@ -88,9 +148,14 @@ export default function HalamanDaftar() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={handleMasukGoogle}
+        disabled={memproses}
+        className="tombol-kedua w-full py-3"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
-        Masuk dengan Google
+        {memproses ? "Menghubungkan..." : "Masuk dengan Google"}
       </button>
 
       {pesan && (
@@ -101,10 +166,22 @@ export default function HalamanDaftar() {
 
       <p className="mt-6 text-center text-sm font-medium text-redup">
         Sudah punya akun?{" "}
-        <Link href="/masuk" className="font-semibold text-sedap hover:underline">
+        <Link
+          href={kembali ? `/masuk?kembali=${encodeURIComponent(kembali)}` : "/masuk"}
+          className="font-semibold text-sedap hover:underline"
+        >
           Masuk
         </Link>
       </p>
     </KerangkaPublik>
+  );
+}
+
+// Halaman Daftar (PRD 4.1)
+export default function HalamanDaftar() {
+  return (
+    <Suspense>
+      <IsiHalamanDaftar />
+    </Suspense>
   );
 }

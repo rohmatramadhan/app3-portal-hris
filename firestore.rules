@@ -1,0 +1,94 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthed() && request.auth.uid == uid;
+    }
+
+    function isHrd() {
+      return isAuthed() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
+    }
+
+    // Koleksi users: profil pengguna (karyawan / HRD)
+    match /users/{uid} {
+      // Pembacaan profil diizinkan untuk pemilik dokumen atau staf HRD
+      allow read: if isOwner(uid) || isHrd();
+
+      // Pendaftaran akun baru hanya boleh dilakukan oleh pemiliknya dan role WAJIB "karyawan"
+      allow create: if isOwner(uid) && 
+                       request.resource.data.role == "karyawan" &&
+                       request.resource.data.email is string &&
+                       request.resource.data.nama is string;
+
+      // Pembaruan profil:
+      // 1. Pemilik hanya boleh mengubah nama (role dan email dikunci agar tidak bisa dinaikkan)
+      // 2. HRD berhak mengubah peran karyawan (misal: mempromosikan menjadi HRD)
+      allow update: if (isOwner(uid) && 
+                        request.resource.data.role == resource.data.role &&
+                        request.resource.data.email == resource.data.email)
+                    || isHrd();
+
+      // Dokumen pengguna tidak boleh dihapus dari client
+      allow delete: if false;
+    }
+
+    // Koleksi presensi: catatan kehadiran harian
+    match /presensi/{presensiId} {
+      // Pembacaan diizinkan untuk pemilik catatan presensi atau staf HRD (rekap dasbor/laporan)
+      allow read: if isAuthed() && (resource.data.karyawanId == request.auth.uid || isHrd());
+
+      // Karyawan mencatat presensi masuk miliknya sendiri untuk hari ini
+      allow create: if isAuthed() && 
+                       request.resource.data.karyawanId == request.auth.uid &&
+                       request.resource.data.tanggal is string &&
+                       request.resource.data.jamMasuk is timestamp;
+
+      // Karyawan mencatat presensi pulang (hanya boleh memperbarui jamPulang pada catatannya sendiri)
+      // Atau HRD
+      allow update: if (isAuthed() && 
+                        resource.data.karyawanId == request.auth.uid &&
+                        request.resource.data.karyawanId == resource.data.karyawanId &&
+                        request.resource.data.tanggal == resource.data.tanggal &&
+                        request.resource.data.jamMasuk == resource.data.jamMasuk)
+                    || isHrd();
+
+      allow delete: if false;
+    }
+
+    // Koleksi pengajuan_cuti: pengajuan cuti karyawan
+    match /pengajuan_cuti/{cutiId} {
+      // Pembacaan diizinkan untuk pemohon cuti atau staf HRD
+      allow read: if isAuthed() && (resource.data.karyawanId == request.auth.uid || isHrd());
+
+      // Karyawan mengajukan cuti miliknya sendiri:
+      // Status awal WAJIB "menunggu", catatan HRD harus kosong
+      allow create: if isAuthed() && 
+                       request.resource.data.karyawanId == request.auth.uid &&
+                       request.resource.data.status == "menunggu" &&
+                       request.resource.data.tanggalMulai is timestamp &&
+                       request.resource.data.tanggalSelesai is timestamp &&
+                       request.resource.data.alasan is string;
+
+      // Keputusan cuti: Hanya HRD yang berhak menyetujui, menolak, atau memberi catatan HRD
+      allow update: if isHrd() && 
+                       request.resource.data.status in ["menunggu", "disetujui", "ditolak"];
+
+      allow delete: if false;
+    }
+
+    // Default deny untuk seluruh dokumen atau koleksi lain yang tidak terdaftar
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
