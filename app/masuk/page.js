@@ -1,27 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
+import { masukDenganEmail, masukDenganGoogle, terjemahkanGalatAuth } from "@/lib/auth";
 import KerangkaPublik from "@/components/KerangkaPublik";
-
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+import Memuat from "@/components/Memuat";
 
 /**
- * Halaman Masuk (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-in page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
+ * Menentukan halaman tujuan setelah masuk:
+ * - Jika ada parameter kembali dan sah: arahkan ke sana (kecuali bukan HRD membuka /admin, dialihkan ke /beranda).
+ * - Tanpa kembali: role "hrd" ke /admin, role "karyawan" ke /beranda.
  */
-export default function HalamanMasuk() {
+function dapatkanTujuan(role, kembaliParam) {
+  if (kembaliParam) {
+    const tujuan = decodeURIComponent(kembaliParam);
+    if (tujuan.startsWith("/") && !tujuan.startsWith("//")) {
+      if ((tujuan === "/admin" || tujuan.startsWith("/admin/")) && role !== "hrd") {
+        return "/beranda";
+      }
+      return tujuan;
+    }
+  }
+  return role === "hrd" ? "/admin" : "/beranda";
+}
+
+function KontenMasuk() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const kembali = searchParams.get("kembali");
+  const { pengguna, memuat, authLoading, adaPenggunaAuth } = usePengguna();
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangMasuk, setSedangMasuk] = useState(false);
 
-  function kirim(e) {
+  // Jika sudah masuk, arahkan sesuai peran dan jangan membuka formulir masuk lagi
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      const tujuan = dapatkanTujuan(pengguna.role, kembali);
+      router.replace(tujuan);
+    }
+  }, [pengguna, memuat, kembali, router]);
+
+  // Selama auth belum selesai memeriksa sesi atau pengguna sudah login, tampilkan layar Memuat...
+  if (authLoading || (adaPenggunaAuth && memuat) || (pengguna && !pesan)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-latar p-8">
+        <Memuat />
+      </div>
+    );
+  }
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
@@ -30,11 +64,42 @@ export default function HalamanMasuk() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    setSedangMasuk(true);
+    setPesan("");
+    try {
+      const { profil } = await masukDenganEmail(email, kataSandi);
+      const tujuan = dapatkanTujuan(profil.role, kembali);
+      router.replace(tujuan);
+    } catch (err) {
+      if (
+        err.code !== "auth/invalid-credential" &&
+        err.code !== "auth/user-not-found" &&
+        err.code !== "auth/wrong-password"
+      ) {
+        console.error("Gagal masuk dengan email:", err);
+      }
+      setPesan(terjemahkanGalatAuth(err));
+    } finally {
+      setSedangMasuk(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function handleMasukGoogle() {
+    setSedangMasuk(true);
+    setPesan("");
+    try {
+      const { profil } = await masukDenganGoogle();
+      const tujuan = dapatkanTujuan(profil.role, kembali);
+      router.replace(tujuan);
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        console.error("Gagal masuk dengan Google:", err);
+      }
+      setPesan(terjemahkanGalatAuth(err));
+    } finally {
+      setSedangMasuk(false);
+    }
   }
 
   return (
@@ -48,6 +113,7 @@ export default function HalamanMasuk() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={sedangMasuk}
             className="isian"
           />
           {galat.email && <p className="galat">{galat.email}</p>}
@@ -60,12 +126,13 @@ export default function HalamanMasuk() {
             autoComplete="current-password"
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
+            disabled={sedangMasuk}
             className="isian"
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Masuk
+        <button type="submit" disabled={sedangMasuk} className="tombol-utama w-full py-3 text-lg">
+          {sedangMasuk ? "Memproses..." : "Masuk"}
         </button>
       </form>
 
@@ -75,23 +142,44 @@ export default function HalamanMasuk() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button type="button" onClick={handleMasukGoogle} disabled={sedangMasuk} className="tombol-kedua w-full py-3">
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>
 
       {pesan && (
-        <p role="status" className="mt-5 rounded-xl border border-menunggu bg-menunggu/15 p-3 text-sm font-bold text-tinta">
+        <p role="status" className="mt-5 rounded-xl border border-ditolak/30 bg-ditolak/10 p-3 text-sm font-bold text-red-800">
           {pesan}
         </p>
       )}
 
       <p className="mt-6 text-center text-sm font-medium text-redup">
         Belum punya akun?{" "}
-        <Link href="/daftar" className="font-semibold text-sedap hover:underline">
+        <Link
+          href={kembali ? `/daftar?kembali=${encodeURIComponent(kembali)}` : "/daftar"}
+          className="font-semibold text-sedap hover:underline"
+        >
           Daftar
         </Link>
       </p>
     </KerangkaPublik>
+  );
+}
+
+/**
+ * Halaman Masuk (PRD 4.1).
+ * Dibungkus Suspense karena membaca parameter kembali lewat useSearchParams.
+ */
+export default function HalamanMasuk() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-latar p-8">
+          <Memuat />
+        </div>
+      }
+    >
+      <KontenMasuk />
+    </Suspense>
   );
 }

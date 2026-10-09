@@ -16,8 +16,10 @@ import PilStatus from "@/components/PilStatus";
 // Daftar Cuti (PRD 4.4.2). Urutan terbaru sudah diatur di lib/data.js / Leave list (PRD 4.4.2). Newest-first order comes from lib/data.js
 export default function HalamanCuti() {
   const { pengguna } = usePengguna();
-  const router = useRouter();
-  const { status, data, cobaLagi } = useAmbilData(() => ambilPengajuanCuti(pengguna.uid), [pengguna.uid]);
+  const { status, data, cobaLagi } = useAmbilData(
+    () => (pengguna?.uid ? ambilPengajuanCuti(pengguna.uid) : Promise.resolve([])),
+    [pengguna?.uid]
+  );
 
   const tombolAjukan = (
     <Link href="/cuti/baru" className="tombol-utama">
