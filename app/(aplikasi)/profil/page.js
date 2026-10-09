@@ -1,28 +1,60 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePengguna } from "@/lib/pengguna";
+import { ubahNamaProfil } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 
-// Profil (PRD 4.5). Nama bisa diubah di tampilan, belum disimpan / Profile (PRD 4.5). Name is editable on screen, not saved yet
+// Profil (PRD 4.5)
 export default function HalamanProfil() {
-  const { pengguna } = usePengguna();
-  const [nama, setNama] = useState(pengguna.nama);
+  const { pengguna, segarkan } = usePengguna();
+  const [nama, setNama] = useState(pengguna?.nama || "");
   const [pesan, setPesan] = useState("");
+  const [memproses, setMemproses] = useState(false);
 
-  function simpan(e) {
+  useEffect(() => {
+    if (pengguna?.nama) {
+      setNama(pengguna.nama);
+    }
+  }, [pengguna?.nama]);
+
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(nama.trim() ? "Nama diperbarui (contoh, belum tersimpan)." : "Nama wajib diisi.");
+    if (!nama.trim()) {
+      setPesan("Nama wajib diisi.");
+      return;
+    }
+    if (!pengguna?.uid) return;
+
+    setMemproses(true);
+    setPesan("");
+    try {
+      await ubahNamaProfil(pengguna.uid, nama.trim());
+      await segarkan();
+      setPesan("Nama berhasil disimpan.");
+    } catch (err) {
+      console.error(err);
+      setPesan("Gagal memperbarui nama: " + err.message);
+    } finally {
+      setMemproses(false);
+    }
   }
+
+  if (!pengguna) return null;
 
   return (
     <div className="max-w-2xl space-y-8">
-      <KepalaHalaman judul="Profil" keterangan="Nama bisa kamu ubah. Email dan peran diatur oleh HRD." warna="terong" ikon="orang" />
+      <KepalaHalaman
+        judul="Profil"
+        keterangan="Nama bisa kamu ubah. Email dan peran diatur oleh HRD."
+        warna="terong"
+        ikon="orang"
+      />
 
       <form onSubmit={simpan} className="kartu overflow-hidden">
         <div className="flex items-center gap-4 border-b border-tinta/10 bg-krem p-6">
           <span className="grid h-16 w-16 place-items-center rounded-2xl border border-tinta/10 bg-terong text-3xl font-bold text-white shadow-tipis">
-            {(nama.trim() || pengguna.nama).charAt(0)}
+            {(nama.trim() || pengguna.nama || "U").charAt(0)}
           </span>
           <div>
             <p className="text-xl font-bold text-tinta">{nama.trim() || pengguna.nama}</p>
@@ -35,11 +67,23 @@ export default function HalamanProfil() {
         <div className="space-y-5 p-6">
           <div>
             <label htmlFor="nama" className="label">Nama</label>
-            <input id="nama" autoComplete="name" value={nama} onChange={(e) => setNama(e.target.value)} className="isian" />
+            <input
+              id="nama"
+              autoComplete="name"
+              value={nama}
+              onChange={(e) => setNama(e.target.value)}
+              className="isian"
+              disabled={memproses}
+            />
           </div>
           <div>
             <label htmlFor="email" className="label">Email</label>
-            <input id="email" value={pengguna.email} readOnly className="isian cursor-not-allowed bg-latar text-redup" />
+            <input
+              id="email"
+              value={pengguna.email || ""}
+              readOnly
+              className="isian cursor-not-allowed bg-latar text-redup"
+            />
           </div>
           <div>
             <label htmlFor="peran" className="label">Peran</label>
@@ -51,8 +95,17 @@ export default function HalamanProfil() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <button type="submit" className="tombol-utama px-8">Simpan</button>
-            {pesan && <p role="status" className="font-bold text-tinta">{pesan}</p>}
+            <button type="submit" disabled={memproses} className="tombol-utama px-8">
+              {memproses ? "Menyimpan..." : "Simpan"}
+            </button>
+            {pesan && (
+              <p
+                role="status"
+                className={`font-bold ${pesan.includes("Gagal") || pesan.includes("wajib") ? "text-red-700" : "text-sedap"}`}
+              >
+                {pesan}
+              </p>
+            )}
           </div>
         </div>
       </form>

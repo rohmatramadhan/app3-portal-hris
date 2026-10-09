@@ -13,11 +13,14 @@ import Kosong from "@/components/Kosong";
 import Gagal from "@/components/Gagal";
 import PilStatus from "@/components/PilStatus";
 
-// Daftar Cuti (PRD 4.4.2). Urutan terbaru sudah diatur di lib/data.js / Leave list (PRD 4.4.2). Newest-first order comes from lib/data.js
+// Daftar Cuti (PRD 4.4.2)
 export default function HalamanCuti() {
   const { pengguna } = usePengguna();
   const router = useRouter();
-  const { status, data, cobaLagi } = useAmbilData(() => ambilPengajuanCuti(pengguna.uid), [pengguna.uid]);
+  const { status, data, cobaLagi } = useAmbilData(
+    () => (pengguna?.uid ? ambilPengajuanCuti(pengguna.uid) : Promise.resolve([])),
+    [pengguna?.uid]
+  );
 
   const tombolAjukan = (
     <Link href="/cuti/baru" className="tombol-utama">
@@ -44,12 +47,12 @@ export default function HalamanCuti() {
             <Gagal onCobaLagi={cobaLagi} />
           </div>
         )}
-        {status === "berhasil" && data.length === 0 && (
+        {status === "berhasil" && (!data || data.length === 0) && (
           <div className="p-5">
             <Kosong teks="Kamu belum pernah mengajukan cuti.">{tombolAjukan}</Kosong>
           </div>
         )}
-        {status === "berhasil" && data.length > 0 && (
+        {status === "berhasil" && data && data.length > 0 && (
           <div className="overflow-x-auto">
             <table className="tabel">
               <thead>
@@ -62,8 +65,11 @@ export default function HalamanCuti() {
               </thead>
               <tbody>
                 {data.map((c) => (
-                  // Seluruh baris bisa diklik; tautan di Nomor untuk pengguna papan ketik / Whole row is clickable; the Nomor link serves keyboard users
-                  <tr key={c.id} onClick={() => router.push(`/cuti/${c.id}`)} className="cursor-pointer transition hover:bg-krem">
+                  <tr
+                    key={c.id}
+                    onClick={() => router.push(`/cuti/${c.id}`)}
+                    className="cursor-pointer transition hover:bg-krem"
+                  >
                     <td>
                       <Link href={`/cuti/${c.id}`} className="font-bold text-sedap hover:underline">
                         {c.id}
