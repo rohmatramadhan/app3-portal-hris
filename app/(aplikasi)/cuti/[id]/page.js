@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
 import { ambilSatuPengajuan } from "@/lib/data";
 import { formatTanggal, formatJam, lamaHari } from "@/lib/waktu";
@@ -15,7 +16,12 @@ import PilStatus from "@/components/PilStatus";
 // Rincian Cuti (PRD 4.4.2) / Leave detail (PRD 4.4.2)
 export default function HalamanRincianCuti() {
   const { id } = useParams();
-  const { status, data: c, cobaLagi } = useAmbilData(() => ambilSatuPengajuan(id), [id]);
+  const { pengguna } = usePengguna();
+  const { status, data: c, cobaLagi } = useAmbilData(
+    () => ambilSatuPengajuan(id, pengguna),
+    [id, pengguna?.uid]
+  );
+
 
   return (
     <div className="max-w-2xl space-y-8">

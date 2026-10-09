@@ -1,40 +1,71 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import KerangkaPublik from "@/components/KerangkaPublik";
-
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+import { usePengguna } from "@/lib/pengguna";
+import { masukDenganEmail, masukDenganGoogle, terjemahkanGalatAuth } from "@/lib/auth";
 
 /**
- * Halaman Masuk (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-in page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
+ * Halaman Masuk (PRD 4.1). Tersambung ke Firebase Auth.
+ * Karyawan diarahkan ke /beranda, HRD diarahkan ke /admin.
  */
 export default function HalamanMasuk() {
+  const router = useRouter();
+  const { pengguna, memuat: memuatPengguna } = usePengguna();
+
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
-  const [pesan, setPesan] = useState("");
+  const [pesanGalat, setPesanGalat] = useState("");
+  const [sedangKirim, setSedangKirim] = useState(false);
 
-  function kirim(e) {
+  // Jika sudah login, langsung alihkan ke halaman yang sesuai (PRD 4.1)
+  useEffect(() => {
+    if (!memuatPengguna && pengguna) {
+      if (pengguna.role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    }
+  }, [pengguna, memuatPengguna, router]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
+    setPesanGalat("");
+
     const g = {};
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
     setGalat(g);
-    if (Object.keys(g).length > 0) {
-      setPesan("");
-      return;
+    if (Object.keys(g).length > 0) return;
+
+    setSedangKirim(true);
+    try {
+      await masukDenganEmail(email, kataSandi);
+      // Pengalihan ditangani oleh useEffect di atas begitu status auth terbaca
+    } catch (err) {
+      setPesanGalat(terjemahkanGalatAuth(err.code));
+    } finally {
+      setSedangKirim(false);
     }
-    setPesan(PESAN_BELUM_DIPASANG);
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function handleMasukGoogle() {
+    setPesanGalat("");
+    setSedangKirim(true);
+    try {
+      await masukDenganGoogle();
+      // Pengalihan ditangani oleh useEffect di atas
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        setPesanGalat(terjemahkanGalatAuth(err.code));
+      }
+    } finally {
+      setSedangKirim(false);
+    }
   }
 
   return (
@@ -48,6 +79,7 @@ export default function HalamanMasuk() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={sedangKirim}
             className="isian"
           />
           {galat.email && <p className="galat">{galat.email}</p>}
@@ -60,12 +92,17 @@ export default function HalamanMasuk() {
             autoComplete="current-password"
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
+            disabled={sedangKirim}
             className="isian"
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Masuk
+        <button
+          type="submit"
+          disabled={sedangKirim || memuatPengguna}
+          className="tombol-utama w-full py-3 text-lg disabled:opacity-50"
+        >
+          {sedangKirim ? "Memproses..." : "Masuk"}
         </button>
       </form>
 
@@ -75,14 +112,19 @@ export default function HalamanMasuk() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={handleMasukGoogle}
+        disabled={sedangKirim || memuatPengguna}
+        className="tombol-kedua w-full py-3 disabled:opacity-50"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>
 
-      {pesan && (
-        <p role="status" className="mt-5 rounded-xl border border-menunggu bg-menunggu/15 p-3 text-sm font-bold text-tinta">
-          {pesan}
+      {pesanGalat && (
+        <p role="status" className="mt-5 rounded-xl border border-ditolak/30 bg-ditolak/10 p-3 text-sm font-bold text-ditolak">
+          {pesanGalat}
         </p>
       )}
 

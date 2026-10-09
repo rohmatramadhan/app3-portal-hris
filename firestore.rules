@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Fungsi bantuan untuk memeriksa apakah pengguna telah login
+    function sudahLogin() {
+      return request.auth != null;
+    }
+
+    // Fungsi bantuan untuk memeriksa apakah pengguna berstatus HRD
+    function adalahHrd() {
+      return sudahLogin() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'hrd';
+    }
+
+    // Koleksi users (PRD 7.1 & AGENTS.md aturan 1 & 2)
+    match /users/{userId} {
+      // Siapa pun yang login dapat membaca daftar user (untuk data rekan & dasbor)
+      allow read: if sudahLogin();
+      
+      // Pembuatan profil: hanya untuk user yang bersangkutan (saat daftar/login pertama)
+      allow create: if sudahLogin() && request.auth.uid == userId;
+      
+      // Pembaruan profil: 
+      // HRD dapat mengubah profil siapa saja (termasuk peran),
+      // sedangkan karyawan hanya dapat mengubah profilnya sendiri dan TIDAK BOLEH mengubah role miliknya (PRD 2.4 & 4.5)
+      allow update: if sudahLogin() && (
+        adalahHrd() ||
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+      );
+      
+      // Penghapusan hanya oleh HRD
+      allow delete: if adalahHrd();
+    }
+
+    // Koleksi presensi (PRD 7.1)
+    match /presensi/{presensiId} {
+      // HRD bisa membaca semua, karyawan hanya presensi miliknya sendiri (PRD 2.4)
+      allow read: if sudahLogin() && (
+        adalahHrd() || resource.data.karyawanId == request.auth.uid
+      );
+      
+      // Catat presensi: oleh karyawan yang bersangkutan atau HRD
+      allow create: if sudahLogin() && (
+        adalahHrd() || request.resource.data.karyawanId == request.auth.uid
+      );
+      
+      allow update, delete: if adalahHrd();
+    }
+
+    // Koleksi pengajuan_cuti (PRD 7.1)
+    match /pengajuan_cuti/{cutiId} {
+      // HRD bisa membaca semua, karyawan hanya pengajuan miliknya (PRD 2.4)
+      allow read: if sudahLogin() && (
+        adalahHrd() || resource.data.karyawanId == request.auth.uid
+      );
+      
+      // Mengajukan cuti baru
+      allow create: if sudahLogin() && (
+        adalahHrd() || request.resource.data.karyawanId == request.auth.uid
+      );
+      
+      // HRD dapat memutuskan (mengubah status), karyawan tidak boleh mengubah jika sudah diputuskan (PRD 4.4.2 & 4.8)
+      allow update: if sudahLogin() && (
+        adalahHrd() ||
+        (resource.data.karyawanId == request.auth.uid && resource.data.status == 'menunggu')
+      );
+      
+      allow delete: if adalahHrd();
+    }
+  }
+}
