@@ -1,28 +1,58 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { usePengguna, daftarDenganEmail, masukDenganGoogle } from "@/lib/pengguna";
 import KerangkaPublik from "@/components/KerangkaPublik";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+function formatGalatAuth(err) {
+  const code = err?.code || "";
+  if (code === "auth/email-already-in-use") {
+    return "Email sudah terdaftar. Silakan gunakan email lain atau masuk.";
+  }
+  if (code === "auth/invalid-email") {
+    return "Format email tidak valid.";
+  }
+  if (code === "auth/weak-password") {
+    return "Kata sandi terlalu lemah. Gunakan minimal 6 karakter.";
+  }
+  if (code === "auth/popup-closed-by-user") {
+    return "Jendela login Google ditutup sebelum selesai.";
+  }
+  if (code === "auth/cancelled-popup-request") {
+    return "Proses login dibatalkan.";
+  }
+  if (code === "auth/configuration-not-found" || code === "auth/operation-not-allowed") {
+    return "Metode autentikasi belum diaktifkan di Firebase Console.";
+  }
+  return err?.message || "Gagal mendaftar. Silakan coba lagi.";
+}
 
-/**
- * Halaman Daftar (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-up page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
+// Halaman Daftar (PRD 4.1) tersambung ke Firebase Auth
 export default function HalamanDaftar() {
+  const router = useRouter();
+  const { pengguna, memuat } = usePengguna();
   const [nama, setNama] = useState("");
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangMemproses, setSedangMemproses] = useState(false);
 
-  function kirim(e) {
+  // Jika sudah masuk, langsung arahkan ke beranda/admin (PRD 4.1)
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      if (pengguna.role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    }
+  }, [pengguna, memuat, router]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!nama.trim()) g.nama = "Nama wajib diisi.";
     if (!email.trim()) g.email = "Email wajib diisi.";
@@ -32,11 +62,35 @@ export default function HalamanDaftar() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    setSedangMemproses(true);
+    setPesan("");
+    try {
+      await daftarDenganEmail(nama, email, kataSandi);
+      // Akun baru otomatis berperan karyawan, bawa ke Beranda (PRD 4.1)
+      router.push("/beranda");
+    } catch (err) {
+      setPesan(formatGalatAuth(err));
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function handleMasukGoogle() {
+    setSedangMemproses(true);
+    setPesan("");
+    try {
+      const profil = await masukDenganGoogle();
+      if (profil.role === "hrd") {
+        router.push("/admin");
+      } else {
+        router.push("/beranda");
+      }
+    } catch (err) {
+      setPesan(formatGalatAuth(err));
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
   return (
@@ -77,8 +131,8 @@ export default function HalamanDaftar() {
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Daftar
+        <button type="submit" disabled={sedangMemproses} className="tombol-utama w-full py-3 text-lg">
+          {sedangMemproses ? "Mendaftarkan..." : "Daftar"}
         </button>
       </form>
 
@@ -88,7 +142,12 @@ export default function HalamanDaftar() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={handleMasukGoogle}
+        disabled={sedangMemproses}
+        className="tombol-kedua w-full py-3"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>

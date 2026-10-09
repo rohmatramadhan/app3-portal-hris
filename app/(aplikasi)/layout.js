@@ -2,15 +2,12 @@ import { Suspense } from "react";
 import BilahAtas from "@/components/BilahAtas";
 import MenuSamping from "@/components/MenuSamping";
 import Memuat from "@/components/Memuat";
+import PenjagaRute from "@/components/PenjagaRute";
 
 /**
  * Tata letak semua halaman setelah masuk. Halaman /masuk dan /daftar ada di luar
  * folder (aplikasi), jadi tampil tanpa bilah atas dan menu.
  * Suspense wajib karena menu dan halaman membaca alamat (usePathname, useSearchParams).
- *
- * Layout for every signed-in page. /masuk and /daftar live outside the (aplikasi)
- * folder, so they render without the top bar and menu.
- * Suspense is required because the menu and pages read the URL (usePathname, useSearchParams).
  */
 export default function LayoutAplikasi({ children }) {
   return (
@@ -24,7 +21,9 @@ export default function LayoutAplikasi({ children }) {
         </aside>
         <main className="min-w-0 flex-1 p-4 md:p-8">
           <div className="mx-auto max-w-5xl">
-            <Suspense fallback={<Memuat />}>{children}</Suspense>
+            <Suspense fallback={<Memuat />}>
+              <PenjagaRute>{children}</PenjagaRute>
+            </Suspense>
           </div>
         </main>
       </div>

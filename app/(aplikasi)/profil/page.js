@@ -1,18 +1,50 @@
 "use client";
 
 import { useState } from "react";
-import { usePengguna } from "@/lib/pengguna";
+import { useRouter } from "next/navigation";
+import { usePengguna, keluar } from "@/lib/pengguna";
+import { ubahProfil } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
+import Memuat from "@/components/Memuat";
 
-// Profil (PRD 4.5). Nama bisa diubah di tampilan, belum disimpan / Profile (PRD 4.5). Name is editable on screen, not saved yet
+// Profil (PRD 4.5). Nama disimpan ke Firestore / Profile (PRD 4.5). Name is saved to Firestore
 export default function HalamanProfil() {
-  const { pengguna } = usePengguna();
-  const [nama, setNama] = useState(pengguna.nama);
-  const [pesan, setPesan] = useState("");
+  const router = useRouter();
+  const { pengguna, memuat } = usePengguna();
 
-  function simpan(e) {
+  if (memuat || !pengguna) {
+    return <Memuat />;
+  }
+
+  return <FormProfil key={pengguna.uid} pengguna={pengguna} router={router} />;
+}
+
+function FormProfil({ pengguna, router }) {
+  const [nama, setNama] = useState(pengguna.nama || "");
+  const [pesan, setPesan] = useState("");
+  const [sedangSimpan, setSedangSimpan] = useState(false);
+
+  async function handleKeluar() {
+    await keluar();
+    router.replace("/masuk");
+  }
+
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(nama.trim() ? "Nama diperbarui (contoh, belum tersimpan)." : "Nama wajib diisi.");
+    if (!nama.trim()) {
+      setPesan("Nama wajib diisi.");
+      return;
+    }
+    setSedangSimpan(true);
+    setPesan("");
+    try {
+      await ubahProfil(pengguna.uid, { nama: nama.trim() });
+      setPesan("Nama berhasil diperbarui.");
+    } catch {
+      setPesan("Gagal memperbarui nama.");
+    } finally {
+      setSedangSimpan(false);
+    }
   }
 
   return (
@@ -51,7 +83,12 @@ export default function HalamanProfil() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <button type="submit" className="tombol-utama px-8">Simpan</button>
+            <button type="submit" disabled={sedangSimpan} className="tombol-utama px-8">
+              {sedangSimpan ? "Menyimpan..." : "Simpan"}
+            </button>
+            <button type="button" onClick={handleKeluar} className="tombol-kedua px-6">
+              Keluar
+            </button>
             {pesan && <p role="status" className="font-bold text-tinta">{pesan}</p>}
           </div>
         </div>

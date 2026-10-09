@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilSemuaPengajuan } from "@/lib/data";
+import { ambilSemuaPengajuan, putuskanCuti } from "@/lib/data";
 import { formatTanggal, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
@@ -28,14 +28,25 @@ export default function HalamanPersetujuanCuti() {
 
   const { status: keadaan, data, cobaLagi } = useAmbilData(() => ambilSemuaPengajuan(status), [status]);
 
-  // Keputusan dan catatan hanya disimpan di tampilan / Decisions and notes are only kept on screen
+  // Keputusan dan catatan
   const [keputusan, setKeputusan] = useState({});
   const [catatan, setCatatan] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangProsesId, setSedangProsesId] = useState(null);
 
-  function putuskan(c, statusBaru) {
-    setKeputusan({ ...keputusan, [c.id]: statusBaru });
-    setPesan(`${c.id} milik ${c.nama} ${statusBaru} (contoh, belum tersimpan).`);
+  async function putuskan(c, statusBaru) {
+    const catatanTeks = catatan[c.id] ?? c.catatanHrd ?? "";
+    setSedangProsesId(c.id);
+    try {
+      await putuskanCuti(c.id, statusBaru, catatanTeks);
+      setKeputusan((prev) => ({ ...prev, [c.id]: statusBaru }));
+      setPesan(`Pengajuan ${c.id} milik ${c.nama} telah ${statusBaru}.`);
+      await cobaLagi();
+    } catch {
+      setPesan(`Gagal memproses pengajuan ${c.id}.`);
+    } finally {
+      setSedangProsesId(null);
+    }
   }
 
   // Pengajuan yang baru diputuskan keluar dari saringan Menunggu / Freshly decided requests drop out of the Menunggu filter
@@ -113,11 +124,21 @@ export default function HalamanPersetujuanCuti() {
                         className="isian"
                       />
                       <div className="mt-3 flex flex-wrap gap-3">
-                        <button type="button" onClick={() => putuskan(c, "disetujui")} className="tombol-utama">
+                        <button
+                          type="button"
+                          onClick={() => putuskan(c, "disetujui")}
+                          disabled={sedangProsesId === c.id}
+                          className="tombol-utama"
+                        >
                           <Ikon nama="centang" />
                           Setujui
                         </button>
-                        <button type="button" onClick={() => putuskan(c, "ditolak")} className="tombol border border-ditolak/40 bg-panel text-red-700 shadow-tipis hover:bg-ditolak/5">
+                        <button
+                          type="button"
+                          onClick={() => putuskan(c, "ditolak")}
+                          disabled={sedangProsesId === c.id}
+                          className="tombol border border-ditolak/40 bg-panel text-red-700 shadow-tipis hover:bg-ditolak/5"
+                        >
                           Tolak
                         </button>
                       </div>

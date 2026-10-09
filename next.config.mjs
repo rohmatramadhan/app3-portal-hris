@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Static export untuk Netlify (tanpa server) / Static export for Netlify (serverless)
+  output: "export",
   turbopack: {
     rules: {
       "*.css": {
