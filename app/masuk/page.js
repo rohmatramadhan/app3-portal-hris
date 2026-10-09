@@ -1,27 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import KerangkaPublik from "@/components/KerangkaPublik";
-
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+import { auth, db } from "@/lib/firebase";
+import { usePengguna } from "@/lib/pengguna";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 /**
- * Halaman Masuk (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-in page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
+ * Halaman Masuk (PRD 4.1). Tersambung ke Firebase Auth & Firestore.
+ * Pengguna diarahkan sesuai peran (karyawan -> /beranda, hrd -> /admin).
  */
 export default function HalamanMasuk() {
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangMemproses, setSedangMemproses] = useState(false);
 
-  function kirim(e) {
+  const router = useRouter();
+  const { pengguna, memuat } = usePengguna();
+
+  // Pengguna yang sudah masuk langsung diarahkan ke halamannya (PRD 4.1)
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      router.replace(pengguna.role === "hrd" ? "/admin" : "/beranda");
+    }
+  }, [pengguna, memuat, router]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
@@ -30,11 +40,66 @@ export default function HalamanMasuk() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    setSedangMemproses(true);
+    setPesan("");
+
+    try {
+      const hasil = await signInWithEmailAndPassword(auth, email.trim(), kataSandi);
+      const userRef = doc(db, "users", hasil.user.uid);
+      const snap = await getDoc(userRef);
+      const role = snap.exists() ? snap.data().role : "karyawan";
+      router.push(role === "hrd" ? "/admin" : "/beranda");
+    } catch (err) {
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/wrong-password"
+      ) {
+        setPesan("Email atau kata sandi salah.");
+      } else if (err.code === "auth/too-many-requests") {
+        setPesan("Terlalu banyak percobaan masuk yang gagal. Silakan coba beberapa saat lagi.");
+      } else {
+        setPesan("Gagal masuk: " + (err.message || "Terjadi kesalahan."));
+      }
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setSedangMemproses(true);
+    setPesan("");
+
+    try {
+      const provider = new GoogleAuthProvider();
+      const hasil = await signInWithPopup(auth, provider);
+      const userRef = doc(db, "users", hasil.user.uid);
+      const snap = await getDoc(userRef);
+
+      let role = "karyawan";
+      if (!snap.exists()) {
+        // Pengguna Google baru dibuat profilnya saat itu juga (PRD 4.1)
+        await setDoc(userRef, {
+          nama: hasil.user.displayName || "Karyawan",
+          email: hasil.user.email,
+          role: "karyawan",
+        });
+      } else {
+        role = snap.data().role || "karyawan";
+      }
+
+      router.push(role === "hrd" ? "/admin" : "/beranda");
+    } catch (err) {
+      if (
+        err.code !== "auth/popup-closed-by-user" &&
+        err.code !== "auth/cancelled-popup-request"
+      ) {
+        setPesan("Gagal masuk dengan Google: " + (err.message || "Terjadi kesalahan."));
+      }
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
   return (
@@ -64,8 +129,12 @@ export default function HalamanMasuk() {
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Masuk
+        <button
+          type="submit"
+          disabled={sedangMemproses}
+          className="tombol-utama w-full py-3 text-lg disabled:opacity-60"
+        >
+          {sedangMemproses ? "Memproses..." : "Masuk"}
         </button>
       </form>
 
@@ -75,7 +144,12 @@ export default function HalamanMasuk() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={masukGoogle}
+        disabled={sedangMemproses}
+        className="tombol-kedua w-full py-3 disabled:opacity-60"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>
