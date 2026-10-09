@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
 import { ambilSatuPengajuan } from "@/lib/data";
 import { formatTanggal, formatJam, lamaHari } from "@/lib/waktu";
@@ -12,10 +13,20 @@ import Gagal from "@/components/Gagal";
 import Kosong from "@/components/Kosong";
 import PilStatus from "@/components/PilStatus";
 
-// Rincian Cuti (PRD 4.4.2) / Leave detail (PRD 4.4.2)
+// Rincian Cuti (PRD 4.4.2). Hanya bisa dibuka oleh pemiliknya dan HRD.
 export default function HalamanRincianCuti() {
   const { id } = useParams();
-  const { status, data: c, cobaLagi } = useAmbilData(() => ambilSatuPengajuan(id), [id]);
+  const { pengguna } = usePengguna();
+
+  const { status, data: c, cobaLagi } = useAmbilData(async () => {
+    const hasil = await ambilSatuPengajuan(id);
+    if (!hasil) return null;
+    // PRD 4.4.2: Bila dibuka oleh karyawan lain, tampil "Pengajuan tidak ditemukan"
+    if (pengguna?.role !== "hrd" && hasil.karyawanId !== pengguna?.uid) {
+      return null;
+    }
+    return hasil;
+  }, [id, pengguna?.uid, pengguna?.role]);
 
   return (
     <div className="max-w-2xl space-y-8">
