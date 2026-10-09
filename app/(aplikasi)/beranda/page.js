@@ -12,10 +12,11 @@ import Gagal from "@/components/Gagal";
 
 // Beranda karyawan (PRD 4.2) / Employee home (PRD 4.2)
 export default function HalamanBeranda() {
-  const { pengguna } = usePengguna();
+  const { pengguna, memuat } = usePengguna();
 
   // Dua data diambil bersamaan / Both pieces of data are fetched together
   const { status, data, cobaLagi } = useAmbilData(async () => {
+    if (!pengguna?.uid) return null;
     // Tanggal dihitung di sini, bukan saat render, supaya tidak terkunci di tanggal build / Computed here, not during render, so it is not frozen at build date
     const hariIni = tanggalHariIni();
     const [presensi, cuti] = await Promise.all([
@@ -23,7 +24,11 @@ export default function HalamanBeranda() {
       ambilPengajuanCuti(pengguna.uid),
     ]);
     return { hariIni, presensi, menunggu: cuti.filter((c) => c.status === "menunggu").length };
-  }, [pengguna.uid]);
+  }, [pengguna?.uid]);
+
+  if (memuat || !pengguna) {
+    return <Memuat />;
+  }
 
   let teksPresensi = "Belum presensi hari ini";
   if (data?.presensi?.jamPulang) teksPresensi = "Sudah pulang";
@@ -32,7 +37,7 @@ export default function HalamanBeranda() {
   return (
     <div className="space-y-8">
       <KepalaHalaman
-        judul={`Halo, ${pengguna.nama}!`}
+        judul={`Halo, ${pengguna.nama || "Karyawan"}!`}
         keterangan={data ? formatTanggal(data.hariIni) : "Ringkasan hari ini"}
         ikon="rumah"
       >
@@ -68,7 +73,7 @@ export default function HalamanBeranda() {
             <div>
               <p className="text-sm font-semibold tracking-wide text-tinta uppercase">Cuti menunggu</p>
               <p className="mt-1 text-tinta">
-                <span className="text-5xl font-bold tabular-nums">{data.menunggu}</span>
+                <span className="text-5xl font-bold tabular-nums">{data?.menunggu ?? 0}</span>
                 <span className="ml-2 text-lg font-bold">pengajuan</span>
               </p>
             </div>

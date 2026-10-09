@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:firebase": "node scripts/test-firebase.mjs",
+    "seed:firestore": "node scripts/seed-firestore.mjs",
+    "test:crud": "node scripts/test-crud.mjs",
+    "test:auth": "node scripts/test-auth.mjs"
   },
   "dependencies": {
     "firebase": "^13.0.0",

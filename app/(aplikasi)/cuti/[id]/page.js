@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
+import { usePengguna } from "@/lib/pengguna";
 import { ambilSatuPengajuan } from "@/lib/data";
 import { formatTanggal, formatJam, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
@@ -15,25 +16,31 @@ import PilStatus from "@/components/PilStatus";
 // Rincian Cuti (PRD 4.4.2) / Leave detail (PRD 4.4.2)
 export default function HalamanRincianCuti() {
   const { id } = useParams();
+  const { pengguna, memuat: memuatPengguna } = usePengguna();
   const { status, data: c, cobaLagi } = useAmbilData(() => ambilSatuPengajuan(id), [id]);
+
+  if (memuatPengguna || status === "memuat") return <Memuat />;
+
+  // Otorisasi PRD 4.4.2: Rincian hanya terbuka untuk pemiliknya dan HRD.
+  // Bila nomor di alamat diganti dengan nomor pengajuan orang lain, tampil "Pengajuan tidak ditemukan".
+  const diizinkan = c && (pengguna?.role === "hrd" || c.karyawanId === pengguna?.uid);
 
   return (
     <div className="max-w-2xl space-y-8">
-      <KepalaHalaman judul={c ? `Cuti ${c.id}` : "Rincian Cuti"} keterangan={c && <PilStatus status={c.status} />} warna="kunyit" ikon="kalender">
+      <KepalaHalaman judul={diizinkan ? `Cuti ${c.id}` : "Rincian Cuti"} keterangan={diizinkan && <PilStatus status={c.status} />} warna="kunyit" ikon="kalender">
         <Link href="/cuti" className="tombol-kedua">
           <Ikon nama="kembali" />
           Daftar Cuti
         </Link>
       </KepalaHalaman>
 
-      {status === "memuat" && <Memuat />}
       {status === "gagal" && <Gagal onCobaLagi={cobaLagi} />}
-      {status === "berhasil" && c === null && (
+      {status === "berhasil" && (!c || !diizinkan) && (
         <Kosong teks="Pengajuan tidak ditemukan">
           <Link href="/cuti" className="tombol-utama">Lihat Daftar Cuti</Link>
         </Kosong>
       )}
-      {status === "berhasil" && c && (
+      {status === "berhasil" && diizinkan && (
         <section className="kartu overflow-hidden">
           <div className="grid border-b border-tinta/10 sm:grid-cols-2">
             <div className="border-b border-tinta/10 p-5 sm:border-r sm:border-b-0">

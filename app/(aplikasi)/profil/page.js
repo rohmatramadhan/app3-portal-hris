@@ -1,18 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePengguna } from "@/lib/pengguna";
+import { ambilKaryawan, simpanProfil } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
+import Memuat from "@/components/Memuat";
 
-// Profil (PRD 4.5). Nama bisa diubah di tampilan, belum disimpan / Profile (PRD 4.5). Name is editable on screen, not saved yet
+// Profil (PRD 4.5)
 export default function HalamanProfil() {
-  const { pengguna } = usePengguna();
-  const [nama, setNama] = useState(pengguna.nama);
+  const { pengguna, memuat } = usePengguna();
+  const [nama, setNama] = useState("");
   const [pesan, setPesan] = useState("");
+  const [memproses, setMemproses] = useState(false);
 
-  function simpan(e) {
+  // Ambil nama terbaru dari Firestore jika ada
+  useEffect(() => {
+    if (!pengguna?.uid) return;
+    let aktif = true;
+    ambilKaryawan(pengguna.uid).then((k) => {
+      if (aktif) {
+        setNama(k?.nama || pengguna.nama || "");
+      }
+    });
+    return () => {
+      aktif = false;
+    };
+  }, [pengguna?.uid, pengguna?.nama]);
+
+  if (memuat || !pengguna) {
+    return <Memuat />;
+  }
+
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(nama.trim() ? "Nama diperbarui (contoh, belum tersimpan)." : "Nama wajib diisi.");
+    if (!nama.trim()) {
+      setPesan("Nama wajib diisi.");
+      return;
+    }
+    try {
+      setMemproses(true);
+      await simpanProfil(pengguna.uid, { nama: nama.trim() });
+      setPesan("Nama profil berhasil diperbarui.");
+    } catch (err) {
+      setPesan("Gagal memperbarui profil: " + err.message);
+    } finally {
+      setMemproses(false);
+    }
   }
 
   return (
@@ -51,7 +84,9 @@ export default function HalamanProfil() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <button type="submit" className="tombol-utama px-8">Simpan</button>
+            <button type="submit" disabled={memproses} className="tombol-utama px-8">
+              {memproses ? "Menyimpan..." : "Simpan"}
+            </button>
             {pesan && <p role="status" className="font-bold text-tinta">{pesan}</p>}
           </div>
         </div>
