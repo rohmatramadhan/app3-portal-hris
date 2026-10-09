@@ -3,38 +3,58 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
+import { ajukanCuti } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 
 const kosong = { tanggalMulai: "", tanggalSelesai: "", alasan: "" };
 
-// Ajukan Cuti (PRD 4.4.1). Belum menyimpan ke Firestore / Submit leave (PRD 4.4.1). Not saved to Firestore yet
+// Ajukan Cuti (PRD 4.4.1)
 export default function HalamanAjukanCuti() {
   const router = useRouter();
+  const { pengguna } = usePengguna();
   const [isian, setIsian] = useState(kosong);
   const [galat, setGalat] = useState({});
   const [tersimpan, setTersimpan] = useState(false);
+  const [sedangKirim, setSedangKirim] = useState(false);
+  const [pesanGalat, setPesanGalat] = useState("");
 
   const ubah = (e) => setIsian({ ...isian, [e.target.name]: e.target.value });
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
+    setPesanGalat("");
     const g = {};
     if (!isian.tanggalMulai) g.tanggalMulai = "Tanggal mulai wajib diisi.";
     if (!isian.tanggalSelesai) g.tanggalSelesai = "Tanggal selesai wajib diisi.";
-    // Format "2026-10-07" bisa dibandingkan langsung sebagai teks / "2026-10-07" strings compare correctly as text
+    // Format "2026-10-07" bisa dibandingkan langsung sebagai teks
     else if (isian.tanggalMulai && isian.tanggalSelesai < isian.tanggalMulai)
       g.tanggalSelesai = "Tanggal selesai harus sama atau setelah tanggal mulai";
     if (!isian.alasan.trim()) g.alasan = "Alasan wajib diisi.";
     setGalat(g);
     if (Object.keys(g).length > 0) return;
 
-    setTersimpan(true);
-    setTimeout(() => {
-      setIsian(kosong);
-      setTersimpan(false);
-      router.push("/cuti");
-    }, 1500);
+    try {
+      setSedangKirim(true);
+      await ajukanCuti({
+        karyawanId: pengguna.uid,
+        tanggalMulai: isian.tanggalMulai,
+        tanggalSelesai: isian.tanggalSelesai,
+        alasan: isian.alasan.trim(),
+      });
+      setTersimpan(true);
+      setTimeout(() => {
+        setIsian(kosong);
+        setTersimpan(false);
+        router.push("/cuti");
+      }, 1500);
+    } catch (err) {
+      console.error("Gagal mengajukan cuti:", err);
+      setPesanGalat("Gagal menyimpan ke Firestore. Silakan coba lagi.");
+    } finally {
+      setSedangKirim(false);
+    }
   }
 
   return (
@@ -47,6 +67,11 @@ export default function HalamanAjukanCuti() {
       </KepalaHalaman>
 
       <form onSubmit={kirim} noValidate className="kartu space-y-5 p-6">
+        {pesanGalat && (
+          <p role="alert" className="rounded-xl border border-red-500 bg-red-50 p-3 font-bold text-red-700">
+            {pesanGalat}
+          </p>
+        )}
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <label htmlFor="tanggalMulai" className="label">Tanggal mulai</label>
@@ -65,12 +90,12 @@ export default function HalamanAjukanCuti() {
           {galat.alasan && <p className="galat">{galat.alasan}</p>}
         </div>
 
-        <button type="submit" disabled={tersimpan} className="tombol-utama px-8 py-3 text-lg">
-          Kirim
+        <button type="submit" disabled={tersimpan || sedangKirim} className="tombol-utama px-8 py-3 text-lg">
+          {sedangKirim ? "Menyimpan..." : "Kirim"}
         </button>
         {tersimpan && (
           <p role="status" className="rounded-xl border border-disetujui bg-disetujui/15 p-3 font-bold text-tinta">
-            Tersimpan (contoh). Kembali ke Daftar Cuti...
+            Pengajuan cuti berhasil disimpan ke Firestore. Kembali ke Daftar Cuti...
           </p>
         )}
       </form>

@@ -1,42 +1,120 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  updateProfile,
+} from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { usePengguna } from "@/lib/pengguna";
 import KerangkaPublik from "@/components/KerangkaPublik";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
-
-/**
- * Halaman Daftar (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-up page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
+// Halaman Daftar (PRD 4.1)
 export default function HalamanDaftar() {
+  const router = useRouter();
+  const { pengguna, memuat } = usePengguna();
+
   const [nama, setNama] = useState("");
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangMemproses, setSedangMemproses] = useState(false);
 
-  function kirim(e) {
+  // Jika sudah masuk, arahkan langsung sesuai peran
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      if (pengguna.role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    }
+  }, [pengguna, memuat, router]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
+    setPesan("");
     const g = {};
     if (!nama.trim()) g.nama = "Nama wajib diisi.";
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
     setGalat(g);
-    if (Object.keys(g).length > 0) {
-      setPesan("");
-      return;
+    if (Object.keys(g).length > 0) return;
+
+    try {
+      setSedangMemproses(true);
+      const res = await createUserWithEmailAndPassword(auth, email.trim(), kataSandi);
+      const user = res.user;
+
+      await updateProfile(user, { displayName: nama.trim() });
+
+      // Simpan dokumen profil ke koleksi users di Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        nama: nama.trim(),
+        email: email.trim(),
+        role: "karyawan",
+      });
+
+      router.replace("/beranda");
+    } catch (err) {
+      console.error("Gagal mendaftar:", err);
+      if (err.code === "auth/email-already-in-use") {
+        setPesan("Email sudah terdaftar. Silakan masuk.");
+      } else if (err.code === "auth/invalid-email") {
+        setPesan("Format email tidak valid.");
+      } else if (err.code === "auth/weak-password") {
+        setPesan("Kata sandi minimal 6 karakter.");
+      } else {
+        setPesan("Terjadi kesalahan saat mendaftar. Silakan coba lagi.");
+      }
+    } finally {
+      setSedangMemproses(false);
     }
-    setPesan(PESAN_BELUM_DIPASANG);
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setPesan("");
+    try {
+      setSedangMemproses(true);
+      const provider = new GoogleAuthProvider();
+      const res = await signInWithPopup(auth, provider);
+      const user = res.user;
+
+      // Periksa apakah profil sudah ada di Firestore
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+
+      let role = "karyawan";
+      if (!docSnap.exists()) {
+        // Buat profil karyawan baru jika pengguna Google baru pertama masuk
+        await setDoc(docRef, {
+          nama: user.displayName || email.split("@")[0] || "Pengguna",
+          email: user.email,
+          role: "karyawan",
+        });
+      } else {
+        role = docSnap.data().role || "karyawan";
+      }
+
+      if (role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        console.error("Gagal masuk dengan Google:", err);
+        setPesan("Gagal masuk dengan Google. Pastikan domain diizinkan di Firebase Console.");
+      }
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
   return (
@@ -50,6 +128,7 @@ export default function HalamanDaftar() {
             value={nama}
             onChange={(e) => setNama(e.target.value)}
             className="isian"
+            disabled={sedangMemproses}
           />
           {galat.nama && <p className="galat">{galat.nama}</p>}
         </div>
@@ -62,6 +141,7 @@ export default function HalamanDaftar() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="isian"
+            disabled={sedangMemproses}
           />
           {galat.email && <p className="galat">{galat.email}</p>}
         </div>
@@ -74,11 +154,12 @@ export default function HalamanDaftar() {
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
             className="isian"
+            disabled={sedangMemproses}
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Daftar
+        <button type="submit" disabled={sedangMemproses} className="tombol-utama w-full py-3 text-lg">
+          {sedangMemproses ? "Memproses..." : "Daftar"}
         </button>
       </form>
 
@@ -88,7 +169,12 @@ export default function HalamanDaftar() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={masukGoogle}
+        disabled={sedangMemproses}
+        className="tombol-kedua w-full py-3"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>

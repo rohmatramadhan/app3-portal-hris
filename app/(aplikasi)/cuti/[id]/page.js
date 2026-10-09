@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
 import { ambilSatuPengajuan } from "@/lib/data";
+import { usePengguna } from "@/lib/pengguna";
 import { formatTanggal, formatJam, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
@@ -15,11 +16,14 @@ import PilStatus from "@/components/PilStatus";
 // Rincian Cuti (PRD 4.4.2) / Leave detail (PRD 4.4.2)
 export default function HalamanRincianCuti() {
   const { id } = useParams();
+  const { pengguna } = usePengguna();
   const { status, data: c, cobaLagi } = useAmbilData(() => ambilSatuPengajuan(id), [id]);
+
+  const bolehBuka = c && (pengguna?.role === "hrd" || c.karyawanId === pengguna?.uid);
 
   return (
     <div className="max-w-2xl space-y-8">
-      <KepalaHalaman judul={c ? `Cuti ${c.id}` : "Rincian Cuti"} keterangan={c && <PilStatus status={c.status} />} warna="kunyit" ikon="kalender">
+      <KepalaHalaman judul={bolehBuka ? `Cuti ${c.id}` : "Rincian Cuti"} keterangan={bolehBuka && <PilStatus status={c.status} />} warna="kunyit" ikon="kalender">
         <Link href="/cuti" className="tombol-kedua">
           <Ikon nama="kembali" />
           Daftar Cuti
@@ -28,12 +32,12 @@ export default function HalamanRincianCuti() {
 
       {status === "memuat" && <Memuat />}
       {status === "gagal" && <Gagal onCobaLagi={cobaLagi} />}
-      {status === "berhasil" && c === null && (
+      {status === "berhasil" && (!c || !bolehBuka) && (
         <Kosong teks="Pengajuan tidak ditemukan">
           <Link href="/cuti" className="tombol-utama">Lihat Daftar Cuti</Link>
         </Kosong>
       )}
-      {status === "berhasil" && c && (
+      {status === "berhasil" && bolehBuka && (
         <section className="kartu overflow-hidden">
           <div className="grid border-b border-tinta/10 sm:grid-cols-2">
             <div className="border-b border-tinta/10 p-5 sm:border-r sm:border-b-0">
