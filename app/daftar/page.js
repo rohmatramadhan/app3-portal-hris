@@ -1,42 +1,135 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import KerangkaPublik from "@/components/KerangkaPublik";
+import Memuat from "@/components/Memuat";
+import { usePengguna } from "@/lib/pengguna";
+import { auth, db, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
+function FormDaftar() {
+  const router = useRouter();
+  const { pengguna, memuat, setPengguna } = usePengguna();
 
-/**
- * Halaman Daftar (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-up page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
- */
-export default function HalamanDaftar() {
   const [nama, setNama] = useState("");
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [sedangMemproses, setSedangMemproses] = useState(false);
 
-  function kirim(e) {
+  // Prompt 8: Pengguna yang sudah masuk diarahkan sesuai perannya
+  useEffect(() => {
+    if (!memuat && pengguna) {
+      if (pengguna.role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    }
+  }, [pengguna, memuat, router]);
+
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!nama.trim()) g.nama = "Nama wajib diisi.";
     if (!email.trim()) g.email = "Email wajib diisi.";
     if (kataSandi.length < 6) g.kataSandi = "Kata sandi minimal 6 karakter.";
     setGalat(g);
-    if (Object.keys(g).length > 0) {
-      setPesan("");
-      return;
+    if (Object.keys(g).length > 0) return;
+
+    setSedangMemproses(true);
+    setPesan("");
+
+    try {
+      if (isFirebaseConfigured) {
+        // Buat akun di Firebase Auth
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), kataSandi);
+        await updateProfile(cred.user, { displayName: nama.trim() });
+
+        // Prompt 5: Dokumen user di Firestore berisi nama, email, dan role "karyawan". Jangan simpan kata sandi!
+        const userRef = doc(db, "users", cred.user.uid);
+        const profil = {
+          nama: nama.trim(),
+          email: email.trim(),
+          role: "karyawan",
+        };
+        await setDoc(userRef, profil);
+
+        // Karyawan diarahkan ke /beranda
+        router.push("/beranda");
+      } else {
+        // Mode demo
+        const role = email.toLowerCase().includes("wulan") ? "hrd" : "karyawan";
+        const dataDemo = {
+          uid: email.split("@")[0],
+          nama: nama.trim(),
+          email: email.trim(),
+          role,
+        };
+        setPengguna(dataDemo);
+        router.push(role === "hrd" ? "/admin" : "/beranda");
+      }
+    } catch (err) {
+      if (err.code === "auth/email-already-in-use") {
+        setPesan("Email ini sudah terdaftar. Silakan gunakan menu Masuk.");
+      } else if (err.code === "auth/weak-password") {
+        setPesan("Kata sandi terlalu lemah. Gunakan kombinasi yang lebih kuat.");
+      } else {
+        setPesan("Gagal mendaftar: " + (err.message || "Terjadi kesalahan."));
+      }
+    } finally {
+      setSedangMemproses(false);
     }
-    setPesan(PESAN_BELUM_DIPASANG);
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setSedangMemproses(true);
+    setPesan("");
+
+    try {
+      if (isFirebaseConfigured) {
+        const cred = await signInWithPopup(auth, googleProvider);
+        const userRef = doc(db, "users", cred.user.uid);
+        const userSnap = await getDoc(userRef);
+        let role = "karyawan";
+
+        if (userSnap.exists()) {
+          role = userSnap.data().role || "karyawan";
+        } else {
+          // Buat dokumen pengguna baru role "karyawan" (Prompt 5)
+          const namaPengguna = cred.user.displayName || cred.user.email?.split("@")[0] || "Pengguna";
+          const dataBaru = {
+            nama: namaPengguna,
+            email: cred.user.email || "",
+            role: "karyawan",
+          };
+          await setDoc(userRef, dataBaru);
+        }
+
+        router.push(role === "hrd" ? "/admin" : "/beranda");
+      } else {
+        const dataDemo = {
+          uid: "demo-google",
+          nama: "Pengguna Google",
+          email: "google@sedap.id",
+          role: "karyawan",
+        };
+        setPengguna(dataDemo);
+        router.push("/beranda");
+      }
+    } catch (err) {
+      if (err.code === "auth/popup-closed-by-user") {
+        setPesan("Jendela masuk Google ditutup.");
+      } else {
+        setPesan("Gagal masuk dengan Google: " + (err.message || "Terjadi kesalahan."));
+      }
+    } finally {
+      setSedangMemproses(false);
+    }
   }
 
   return (
@@ -50,6 +143,7 @@ export default function HalamanDaftar() {
             value={nama}
             onChange={(e) => setNama(e.target.value)}
             className="isian"
+            placeholder="Nama lengkap"
           />
           {galat.nama && <p className="galat">{galat.nama}</p>}
         </div>
@@ -62,6 +156,7 @@ export default function HalamanDaftar() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="isian"
+            placeholder="nama@sedap.id"
           />
           {galat.email && <p className="galat">{galat.email}</p>}
         </div>
@@ -74,11 +169,16 @@ export default function HalamanDaftar() {
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
             className="isian"
+            placeholder="Minimal 6 karakter"
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Daftar
+        <button
+          type="submit"
+          disabled={sedangMemproses}
+          className="tombol-utama w-full py-3 text-lg"
+        >
+          {sedangMemproses ? "Memproses..." : "Daftar"}
         </button>
       </form>
 
@@ -88,7 +188,12 @@ export default function HalamanDaftar() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button
+        type="button"
+        onClick={masukGoogle}
+        disabled={sedangMemproses}
+        className="tombol-kedua w-full py-3"
+      >
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>
@@ -106,5 +211,13 @@ export default function HalamanDaftar() {
         </Link>
       </p>
     </KerangkaPublik>
+  );
+}
+
+export default function HalamanDaftar() {
+  return (
+    <Suspense fallback={<Memuat />}>
+      <FormDaftar />
+    </Suspense>
   );
 }

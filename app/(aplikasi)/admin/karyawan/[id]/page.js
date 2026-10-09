@@ -4,14 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilKaryawan } from "@/lib/data";
+import { ambilKaryawan, ubahPeranKaryawan } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
 import Kosong from "@/components/Kosong";
 import Gagal from "@/components/Gagal";
 
-// Rincian Karyawan (PRD 4.7) / Employee detail (PRD 4.7)
+// Rincian Karyawan (PRD 4.7)
 export default function HalamanRincianKaryawan() {
   const { id } = useParams();
   const { status, data: k, cobaLagi } = useAmbilData(() => ambilKaryawan(id), [id]);
@@ -32,8 +32,7 @@ export default function HalamanRincianKaryawan() {
           <Link href="/admin/karyawan" className="tombol-utama">Lihat Data Karyawan</Link>
         </Kosong>
       )}
-      {/* key={k.id} mengosongkan isian saat pindah ke karyawan lain / key={k.id} resets the form when switching employees */}
-      {status === "berhasil" && k && <FormPeran key={k.id} karyawan={k} />}
+      {status === "berhasil" && k && <FormPeran key={k.id || k.uid} karyawan={k} />}
     </div>
   );
 }
@@ -43,14 +42,17 @@ const pilihanPeran = [
   { nilai: "hrd", label: "HRD", keterangan: "Ditambah mengelola karyawan, memutuskan cuti, dan membaca laporan." },
 ];
 
-// Simpan hanya mengubah tampilan, belum menulis ke Firestore / Save only changes the screen, nothing is written to Firestore
 function FormPeran({ karyawan }) {
   const [peran, setPeran] = useState(karyawan.role);
   const [pesan, setPesan] = useState("");
+  const [menyimpan, setMenyimpan] = useState(false);
 
-  function simpan(e) {
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(`Peran diubah menjadi ${peran === "hrd" ? "HRD" : "Karyawan"} (contoh, belum tersimpan).`);
+    setMenyimpan(true);
+    await ubahPeranKaryawan(karyawan.id || karyawan.uid, peran);
+    setPesan(`Peran ${karyawan.nama} berhasil diubah menjadi ${peran === "hrd" ? "HRD" : "Karyawan"}.`);
+    setMenyimpan(false);
   }
 
   return (
