@@ -2,18 +2,25 @@
 
 import { useState } from "react";
 import { usePengguna } from "@/lib/pengguna";
+import { ubahProfil } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 
-// Profil (PRD 4.5). Nama bisa diubah di tampilan, belum disimpan / Profile (PRD 4.5). Name is editable on screen, not saved yet
+// Profil (PRD 4.5)
 export default function HalamanProfil() {
   const { pengguna } = usePengguna();
-  const [nama, setNama] = useState(pengguna.nama);
+  const [nama, setNama] = useState(pengguna?.nama || "");
   const [pesan, setPesan] = useState("");
 
-  function simpan(e) {
+  async function simpan(e) {
     e.preventDefault();
-    setPesan(nama.trim() ? "Nama diperbarui (contoh, belum tersimpan)." : "Nama wajib diisi.");
+    if (!nama.trim()) {
+      setPesan("Nama wajib diisi.");
+      return;
+    }
+    await ubahProfil(pengguna.uid, { nama: nama.trim() });
+    setPesan("Nama profil berhasil diperbarui di database.");
   }
+
 
   return (
     <div className="max-w-2xl space-y-8">
