@@ -2,27 +2,33 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  updateProfile,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { pastikanProfilPengguna } from "@/lib/profilPengguna";
 import KerangkaPublik from "@/components/KerangkaPublik";
 
-const PESAN_BELUM_DIPASANG = "Login belum dipasang. Dikerjakan di Sesi 6.";
-
 /**
- * Halaman Daftar (PRD 4.1). SENGAJA belum tersambung ke Firebase Auth.
- * Di Sesi 6 peserta mengganti isi fungsi kirim() dan masukGoogle().
- *
- * Sign-up page (PRD 4.1). DELIBERATELY not wired to Firebase Auth yet.
- * In Session 6 participants replace the bodies of kirim() and masukGoogle().
+ * Halaman Daftar (PRD 4.1).
+ * Tersambung ke Firebase Auth & membuat dokumen profil di users/{uid}
+ * Setiap akun baru otomatis memiliki peran 'karyawan'.
  */
 export default function HalamanDaftar() {
+  const router = useRouter();
   const [nama, setNama] = useState("");
   const [email, setEmail] = useState("");
   const [kataSandi, setKataSandi] = useState("");
   const [galat, setGalat] = useState({});
   const [pesan, setPesan] = useState("");
+  const [memuat, setMemuat] = useState(false);
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
-    // Validasi tampilan saja / Display-only validation
     const g = {};
     if (!nama.trim()) g.nama = "Nama wajib diisi.";
     if (!email.trim()) g.email = "Email wajib diisi.";
@@ -32,11 +38,59 @@ export default function HalamanDaftar() {
       setPesan("");
       return;
     }
-    setPesan(PESAN_BELUM_DIPASANG);
+
+    setMemuat(true);
+    setPesan("");
+
+    try {
+      // 1. Buat user di Firebase Auth
+      const kredensial = await createUserWithEmailAndPassword(auth, email.trim(), kataSandi);
+      const user = kredensial.user;
+
+      // Update displayName di Auth
+      await updateProfile(user, { displayName: nama.trim() });
+
+      // 2. Pastikan profil di users/{uid} (hanya dibuat jika belum ada, tanpa kata sandi)
+      await pastikanProfilPengguna(user, nama.trim());
+
+      // 3. Arahkan ke Beranda
+      router.replace("/beranda");
+    } catch (err) {
+      let pesanGalat = "Gagal mendaftar: " + err.message;
+      if (err.code === "auth/email-already-in-use") {
+        pesanGalat = "Email ini sudah terdaftar. Silakan masuk.";
+      } else if (err.code === "auth/invalid-email") {
+        pesanGalat = "Format email tidak valid.";
+      } else if (err.code === "auth/weak-password") {
+        pesanGalat = "Kata sandi terlalu lemah.";
+      }
+      setPesan(pesanGalat);
+    } finally {
+      setMemuat(false);
+    }
   }
 
-  function masukGoogle() {
-    setPesan(PESAN_BELUM_DIPASANG);
+  async function masukGoogle() {
+    setMemuat(true);
+    setPesan("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const hasil = await signInWithPopup(auth, provider);
+      const profil = await pastikanProfilPengguna(hasil.user);
+      const role = profil?.role || "karyawan";
+
+      if (role === "hrd") {
+        router.replace("/admin");
+      } else {
+        router.replace("/beranda");
+      }
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        setPesan("Gagal masuk dengan Google: " + err.message);
+      }
+    } finally {
+      setMemuat(false);
+    }
   }
 
   return (
@@ -49,6 +103,7 @@ export default function HalamanDaftar() {
             autoComplete="name"
             value={nama}
             onChange={(e) => setNama(e.target.value)}
+            disabled={memuat}
             className="isian"
           />
           {galat.nama && <p className="galat">{galat.nama}</p>}
@@ -61,6 +116,7 @@ export default function HalamanDaftar() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={memuat}
             className="isian"
           />
           {galat.email && <p className="galat">{galat.email}</p>}
@@ -73,12 +129,13 @@ export default function HalamanDaftar() {
             autoComplete="new-password"
             value={kataSandi}
             onChange={(e) => setKataSandi(e.target.value)}
+            disabled={memuat}
             className="isian"
           />
           {galat.kataSandi && <p className="galat">{galat.kataSandi}</p>}
         </div>
-        <button type="submit" className="tombol-utama w-full py-3 text-lg">
-          Daftar
+        <button type="submit" disabled={memuat} className="tombol-utama w-full py-3 text-lg">
+          {memuat ? "Memproses..." : "Daftar"}
         </button>
       </form>
 
@@ -88,7 +145,7 @@ export default function HalamanDaftar() {
         <span className="h-0.5 flex-1 bg-tinta/15" />
       </div>
 
-      <button type="button" onClick={masukGoogle} className="tombol-kedua w-full py-3">
+      <button type="button" onClick={masukGoogle} disabled={memuat} className="tombol-kedua w-full py-3">
         <span className="grid h-6 w-6 place-items-center rounded-full bg-kunyit text-sm font-bold text-tinta">G</span>
         Masuk dengan Google
       </button>

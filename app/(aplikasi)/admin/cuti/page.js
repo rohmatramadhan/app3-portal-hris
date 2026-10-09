@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilSemuaPengajuan } from "@/lib/data";
+import { ambilSemuaPengajuan, putuskanPengajuanCuti } from "@/lib/data";
 import { formatTanggal, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
@@ -20,22 +20,31 @@ const saringan = [
   { nilai: "ditolak", label: "Ditolak" },
 ];
 
-// Persetujuan Cuti (PRD 4.8). Tanpa pemeriksaan peran, lihat Sesi 6 / Leave approval (PRD 4.8). No role check, see Session 6
+// Persetujuan Cuti (PRD 4.8).
 export default function HalamanPersetujuanCuti() {
-  // Saringan disimpan di alamat (?status=menunggu) supaya tautannya bisa dibagikan / Filter lives in the URL (?status=menunggu) so the link can be shared
   const dariAlamat = useSearchParams().get("status");
   const status = saringan.some((s) => s.nilai === dariAlamat) ? dariAlamat : "semua";
 
   const { status: keadaan, data, cobaLagi } = useAmbilData(() => ambilSemuaPengajuan(status), [status]);
 
-  // Keputusan dan catatan hanya disimpan di tampilan / Decisions and notes are only kept on screen
   const [keputusan, setKeputusan] = useState({});
   const [catatan, setCatatan] = useState({});
+  const [memproses, setMemproses] = useState({});
   const [pesan, setPesan] = useState("");
 
-  function putuskan(c, statusBaru) {
-    setKeputusan({ ...keputusan, [c.id]: statusBaru });
-    setPesan(`${c.id} milik ${c.nama} ${statusBaru} (contoh, belum tersimpan).`);
+  async function putuskan(c, statusBaru) {
+    const catatanHrd = catatan[c.id] ?? c.catatanHrd ?? "";
+    setMemproses((prev) => ({ ...prev, [c.id]: true }));
+    setPesan("");
+    try {
+      await putuskanPengajuanCuti(c.id, statusBaru, catatanHrd);
+      setKeputusan((prev) => ({ ...prev, [c.id]: statusBaru }));
+      setPesan(`Pengajuan ${c.id} milik ${c.nama} berhasil diubah menjadi ${statusBaru} di Firestore.`);
+    } catch (err) {
+      setPesan(`Gagal memutuskan pengajuan ${c.id}: ${err.message || err}`);
+    } finally {
+      setMemproses((prev) => ({ ...prev, [c.id]: false }));
+    }
   }
 
   // Pengajuan yang baru diputuskan keluar dari saringan Menunggu / Freshly decided requests drop out of the Menunggu filter
@@ -67,6 +76,12 @@ export default function HalamanPersetujuanCuti() {
         <p role="status" className="rounded-xl border border-tinta/10 bg-krem p-4 font-bold text-tinta">
           {pesan}
         </p>
+      )}
+
+      {pesan && (
+        <div role="status" className="rounded-xl border border-sedap/40 bg-sedap/10 p-4 font-bold text-tinta">
+          {pesan}
+        </div>
       )}
 
       {keadaan === "memuat" && <Memuat />}
@@ -108,16 +123,27 @@ export default function HalamanPersetujuanCuti() {
                       <textarea
                         id={`catatan-${c.id}`}
                         rows={2}
-                        value={c.catatanHrd}
+                        value={catatan[c.id] ?? c.catatanHrd ?? ""}
                         onChange={(e) => setCatatan({ ...catatan, [c.id]: e.target.value })}
                         className="isian"
+                        disabled={memproses[c.id]}
                       />
                       <div className="mt-3 flex flex-wrap gap-3">
-                        <button type="button" onClick={() => putuskan(c, "disetujui")} className="tombol-utama">
+                        <button
+                          type="button"
+                          onClick={() => putuskan(c, "disetujui")}
+                          disabled={memproses[c.id]}
+                          className="tombol-utama"
+                        >
                           <Ikon nama="centang" />
-                          Setujui
+                          {memproses[c.id] ? "Memproses..." : "Setujui"}
                         </button>
-                        <button type="button" onClick={() => putuskan(c, "ditolak")} className="tombol border border-ditolak/40 bg-panel text-red-700 shadow-tipis hover:bg-ditolak/5">
+                        <button
+                          type="button"
+                          onClick={() => putuskan(c, "ditolak")}
+                          disabled={memproses[c.id]}
+                          className="tombol border border-ditolak/40 bg-panel text-red-700 shadow-tipis hover:bg-ditolak/5"
+                        >
                           Tolak
                         </button>
                       </div>

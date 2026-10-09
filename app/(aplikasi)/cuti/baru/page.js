@@ -3,26 +3,29 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { usePengguna } from "@/lib/pengguna";
+import { ajukanCuti } from "@/lib/data";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 
 const kosong = { tanggalMulai: "", tanggalSelesai: "", alasan: "" };
 
-// Ajukan Cuti (PRD 4.4.1). Belum menyimpan ke Firestore / Submit leave (PRD 4.4.1). Not saved to Firestore yet
+// Ajukan Cuti (PRD 4.4.1). Menyimpan langsung ke Firestore
 export default function HalamanAjukanCuti() {
   const router = useRouter();
+  const { pengguna } = usePengguna();
   const [isian, setIsian] = useState(kosong);
   const [galat, setGalat] = useState({});
   const [tersimpan, setTersimpan] = useState(false);
+  const [pesanError, setPesanError] = useState("");
 
   const ubah = (e) => setIsian({ ...isian, [e.target.name]: e.target.value });
 
-  function kirim(e) {
+  async function kirim(e) {
     e.preventDefault();
     const g = {};
     if (!isian.tanggalMulai) g.tanggalMulai = "Tanggal mulai wajib diisi.";
     if (!isian.tanggalSelesai) g.tanggalSelesai = "Tanggal selesai wajib diisi.";
-    // Format "2026-10-07" bisa dibandingkan langsung sebagai teks / "2026-10-07" strings compare correctly as text
     else if (isian.tanggalMulai && isian.tanggalSelesai < isian.tanggalMulai)
       g.tanggalSelesai = "Tanggal selesai harus sama atau setelah tanggal mulai";
     if (!isian.alasan.trim()) g.alasan = "Alasan wajib diisi.";
@@ -30,11 +33,20 @@ export default function HalamanAjukanCuti() {
     if (Object.keys(g).length > 0) return;
 
     setTersimpan(true);
-    setTimeout(() => {
+    setPesanError("");
+    try {
+      const baru = await ajukanCuti({
+        karyawanId: pengguna.uid,
+        tanggalMulai: isian.tanggalMulai,
+        tanggalSelesai: isian.tanggalSelesai,
+        alasan: isian.alasan.trim(),
+      });
       setIsian(kosong);
+      router.push(`/cuti/${baru.id}`);
+    } catch (err) {
       setTersimpan(false);
-      router.push("/cuti");
-    }, 1500);
+      setPesanError("Gagal mengajukan cuti: " + (err.message || err));
+    }
   }
 
   return (
@@ -66,11 +78,16 @@ export default function HalamanAjukanCuti() {
         </div>
 
         <button type="submit" disabled={tersimpan} className="tombol-utama px-8 py-3 text-lg">
-          Kirim
+          {tersimpan ? "Mengirim..." : "Kirim"}
         </button>
         {tersimpan && (
           <p role="status" className="rounded-xl border border-disetujui bg-disetujui/15 p-3 font-bold text-tinta">
-            Tersimpan (contoh). Kembali ke Daftar Cuti...
+            Berhasil diajukan ke Firestore. Membuka rincian pengajuan...
+          </p>
+        )}
+        {pesanError && (
+          <p role="alert" className="rounded-xl border border-ditolak bg-ditolak/15 p-3 font-bold text-red-700">
+            {pesanError}
           </p>
         )}
       </form>

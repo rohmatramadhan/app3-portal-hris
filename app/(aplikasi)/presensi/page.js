@@ -1,32 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilPresensi } from "@/lib/data";
-import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat } from "@/lib/waktu";
+import { ambilPresensi, ambilPresensiTanggal, catatPresensiMasuk, catatPresensiPulang } from "@/lib/data";
+import { bulanIni, formatBulan, formatJam, formatTanggal, tanggalHariIni, terlambat } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
 import Kosong from "@/components/Kosong";
 import Gagal from "@/components/Gagal";
 
-// Presensi Saya (PRD 4.3) / My Attendance (PRD 4.3)
+// Presensi Saya (PRD 4.3)
 export default function HalamanPresensi() {
   const { pengguna } = usePengguna();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Bulan disimpan di alamat (?bulan=2026-09) supaya tetap terpilih saat dimuat ulang / Month lives in the URL (?bulan=2026-09) so it survives a reload
+  // Bulan disimpan di alamat (?bulan=2026-09) supaya tetap terpilih saat dimuat ulang
   const dariAlamat = searchParams.get("bulan");
   const bulan = /^\d{4}-\d{2}$/.test(dariAlamat ?? "") ? dariAlamat : bulanIni();
 
-  const { status, data, cobaLagi } = useAmbilData(() => ambilPresensi(pengguna.uid, bulan), [pengguna.uid, bulan]);
+  const { status, data, cobaLagi } = useAmbilData(
+    () => (pengguna?.uid ? ambilPresensi(pengguna.uid, bulan) : Promise.resolve([])),
+    [pengguna?.uid, bulan]
+  );
 
-  // Catat Masuk/Pulang hanya mengubah tampilan, belum menyimpan / Clock in/out only changes the screen, nothing is saved yet
   const [jamMasuk, setJamMasuk] = useState(null);
   const [jamPulang, setJamPulang] = useState(null);
+  const [memproses, setMemproses] = useState(false);
+  const hariIni = tanggalHariIni();
+
+  // Muat status presensi hari ini
+  useEffect(() => {
+    let aktif = true;
+    if (pengguna?.uid) {
+      ambilPresensiTanggal(pengguna.uid, hariIni).then((p) => {
+        if (!aktif) return;
+        if (p) {
+          setJamMasuk(p.jamMasuk);
+          setJamPulang(p.jamPulang);
+        } else {
+          setJamMasuk(null);
+          setJamPulang(null);
+        }
+      });
+    }
+    return () => {
+      aktif = false;
+    };
+  }, [pengguna?.uid, hariIni]);
+
+  async function handleCatatMasuk() {
+    setMemproses(true);
+    try {
+      const p = await catatPresensiMasuk(pengguna.uid, hariIni);
+      setJamMasuk(p.jamMasuk);
+      cobaLagi(); // Muat ulang tabel
+    } catch (err) {
+      alert("Gagal mencatat masuk: " + (err.message || err));
+    } finally {
+      setMemproses(false);
+    }
+  }
+
+  async function handleCatatPulang() {
+    setMemproses(true);
+    try {
+      const pulang = await catatPresensiPulang(pengguna.uid, hariIni);
+      setJamPulang(pulang);
+      cobaLagi(); // Muat ulang tabel
+    } catch (err) {
+      alert("Gagal mencatat pulang: " + (err.message || err));
+    } finally {
+      setMemproses(false);
+    }
+  }
 
   const jumlahTerlambat = data ? data.filter((p) => terlambat(p.jamMasuk)).length : 0;
 
@@ -36,7 +86,7 @@ export default function HalamanPresensi() {
 
       <section className="kartu grid gap-6 p-6 md:grid-cols-[1fr_auto] md:items-center">
         <div>
-          <p className="text-sm font-semibold tracking-wide text-sedap uppercase">Hari ini</p>
+          <p className="text-sm font-semibold tracking-wide text-sedap uppercase">Hari ini ({formatTanggal(hariIni)})</p>
           <p className="mt-1 text-2xl font-bold text-tinta tabular-nums">
             {jamMasuk === null && "Belum presensi"}
             {jamMasuk !== null && jamPulang === null && `Masuk pukul ${formatJam(jamMasuk)}`}
@@ -44,23 +94,28 @@ export default function HalamanPresensi() {
           </p>
           {jamMasuk !== null && (
             <p className="mt-1 text-sm font-semibold text-redup">
-              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Contoh tampilan, belum tersimpan.
+              {terlambat(jamMasuk) ? "Terlambat (setelah 08.00)." : "Tepat waktu."}
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="button" onClick={() => setJamMasuk(new Date())} disabled={jamMasuk !== null} className="tombol-utama px-6 py-3 text-lg">
+          <button
+            type="button"
+            onClick={handleCatatMasuk}
+            disabled={jamMasuk !== null || memproses}
+            className="tombol-utama px-6 py-3 text-lg"
+          >
             <Ikon nama="masuk" />
-            Catat Masuk
+            {memproses && jamMasuk === null ? "Menyimpan..." : "Catat Masuk"}
           </button>
           <button
             type="button"
-            onClick={() => setJamPulang(new Date())}
-            disabled={jamMasuk === null || jamPulang !== null}
+            onClick={handleCatatPulang}
+            disabled={jamMasuk === null || jamPulang !== null || memproses}
             className="tombol-kunyit px-6 py-3 text-lg"
           >
             <Ikon nama="keluar" />
-            Catat Pulang
+            {memproses && jamPulang === null ? "Menyimpan..." : "Catat Pulang"}
           </button>
         </div>
       </section>
