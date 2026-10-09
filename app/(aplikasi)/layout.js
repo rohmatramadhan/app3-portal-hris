@@ -17,22 +17,30 @@ import GuardMasuk from "@/components/GuardMasuk";
  */
 export default function LayoutAplikasi({ children }) {
   return (
-    <GuardMasuk>
-      <div className="flex min-h-screen flex-col">
-        <BilahAtas />
-        <div className="flex flex-1 flex-col md:flex-row">
-          <aside className="bg-tinta md:w-64 md:shrink-0">
-            <Suspense>
-              <MenuSamping />
-            </Suspense>
-          </aside>
-          <main className="min-w-0 flex-1 p-4 md:p-8">
-            <div className="mx-auto max-w-5xl">
-              <Suspense fallback={<Memuat />}>{children}</Suspense>
-            </div>
-          </main>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Memuat />
         </div>
-      </div>
-    </GuardMasuk>
+      }
+    >
+      <GuardMasuk>
+        <div className="flex min-h-screen flex-col">
+          <BilahAtas />
+          <div className="flex flex-1 flex-col md:flex-row">
+            <aside className="bg-tinta md:w-64 md:shrink-0">
+              <Suspense>
+                <MenuSamping />
+              </Suspense>
+            </aside>
+            <main className="min-w-0 flex-1 p-4 md:p-8">
+              <div className="mx-auto max-w-5xl">
+                <Suspense fallback={<Memuat />}>{children}</Suspense>
+              </div>
+            </main>
+          </div>
+        </div>
+      </GuardMasuk>
+    </Suspense>
   );
 }
