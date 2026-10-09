@@ -1,0 +1,14 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Portal HRIS Sedap",
+        "supportEmail": "izzaanrl@gmail.com"
+      }
+    }
+  }
+}
