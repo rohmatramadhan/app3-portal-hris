@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilSemuaPengajuan } from "@/lib/data";
+import { ambilSemuaPengajuan, putuskanCuti } from "@/lib/data";
 import { formatTanggal, lamaHari } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
@@ -20,23 +20,24 @@ const saringan = [
   { nilai: "ditolak", label: "Ditolak" },
 ];
 
-// Persetujuan Cuti (PRD 4.8). Tanpa pemeriksaan peran, lihat Sesi 6 / Leave approval (PRD 4.8). No role check, see Session 6
+// Persetujuan Cuti (PRD 4.8)
 export default function HalamanPersetujuanCuti() {
-  // Saringan disimpan di alamat (?status=menunggu) supaya tautannya bisa dibagikan / Filter lives in the URL (?status=menunggu) so the link can be shared
   const dariAlamat = useSearchParams().get("status");
   const status = saringan.some((s) => s.nilai === dariAlamat) ? dariAlamat : "semua";
 
   const { status: keadaan, data, cobaLagi } = useAmbilData(() => ambilSemuaPengajuan(status), [status]);
 
-  // Keputusan dan catatan hanya disimpan di tampilan / Decisions and notes are only kept on screen
   const [keputusan, setKeputusan] = useState({});
   const [catatan, setCatatan] = useState({});
   const [pesan, setPesan] = useState("");
 
-  function putuskan(c, statusBaru) {
-    setKeputusan({ ...keputusan, [c.id]: statusBaru });
-    setPesan(`${c.id} milik ${c.nama} ${statusBaru} (contoh, belum tersimpan).`);
+  async function putuskan(c, statusBaru) {
+    const catatanTeks = catatan[c.id] ?? c.catatanHrd ?? "";
+    setKeputusan((prev) => ({ ...prev, [c.id]: statusBaru }));
+    await putuskanCuti(c.id, statusBaru, catatanTeks);
+    setPesan(`${c.id} milik ${c.nama} ${statusBaru} (berhasil disimpan di Firestore).`);
   }
+
 
   // Pengajuan yang baru diputuskan keluar dari saringan Menunggu / Freshly decided requests drop out of the Menunggu filter
   const tampil = (data ?? [])

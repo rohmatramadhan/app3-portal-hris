@@ -1,32 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePengguna } from "@/lib/pengguna";
 import { useAmbilData } from "@/lib/useAmbilData";
-import { ambilPresensi } from "@/lib/data";
-import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat } from "@/lib/waktu";
+import { ambilPresensi, ambilPresensiTanggal, catatPresensiMasuk, catatPresensiPulang } from "@/lib/data";
+import { bulanIni, formatBulan, formatJam, formatTanggal, terlambat, tanggalHariIni } from "@/lib/waktu";
 import KepalaHalaman from "@/components/KepalaHalaman";
 import Ikon from "@/components/Ikon";
 import Memuat from "@/components/Memuat";
 import Kosong from "@/components/Kosong";
 import Gagal from "@/components/Gagal";
 
-// Presensi Saya (PRD 4.3) / My Attendance (PRD 4.3)
+// Presensi Saya (PRD 4.3)
 export default function HalamanPresensi() {
   const { pengguna } = usePengguna();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Bulan disimpan di alamat (?bulan=2026-09) supaya tetap terpilih saat dimuat ulang / Month lives in the URL (?bulan=2026-09) so it survives a reload
   const dariAlamat = searchParams.get("bulan");
   const bulan = /^\d{4}-\d{2}$/.test(dariAlamat ?? "") ? dariAlamat : bulanIni();
 
   const { status, data, cobaLagi } = useAmbilData(() => ambilPresensi(pengguna.uid, bulan), [pengguna.uid, bulan]);
 
-  // Catat Masuk/Pulang hanya mengubah tampilan, belum menyimpan / Clock in/out only changes the screen, nothing is saved yet
   const [jamMasuk, setJamMasuk] = useState(null);
   const [jamPulang, setJamPulang] = useState(null);
+  const [sedangMenyimpan, setSedangMenyimpan] = useState(false);
+
+  // Ambil presensi hari ini jika ada
+  useEffect(() => {
+    if (pengguna?.uid) {
+      ambilPresensiTanggal(pengguna.uid, tanggalHariIni()).then((p) => {
+        if (p) {
+          setJamMasuk(p.jamMasuk);
+          setJamPulang(p.jamPulang);
+        }
+      });
+    }
+  }, [pengguna?.uid]);
+
+  async function tanganiMasuk() {
+    setSedangMenyimpan(true);
+    const sekarang = new Date();
+    await catatPresensiMasuk(pengguna.uid, tanggalHariIni(), sekarang);
+    setJamMasuk(sekarang);
+    setSedangMenyimpan(false);
+    cobaLagi();
+  }
+
+  async function tanganiPulang() {
+    setSedangMenyimpan(true);
+    const sekarang = new Date();
+    await catatPresensiPulang(pengguna.uid, tanggalHariIni(), sekarang);
+    setJamPulang(sekarang);
+    setSedangMenyimpan(false);
+    cobaLagi();
+  }
 
   const jumlahTerlambat = data ? data.filter((p) => terlambat(p.jamMasuk)).length : 0;
 
@@ -44,23 +73,28 @@ export default function HalamanPresensi() {
           </p>
           {jamMasuk !== null && (
             <p className="mt-1 text-sm font-semibold text-redup">
-              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Contoh tampilan, belum tersimpan.
+              {terlambat(jamMasuk) ? "Terlambat. " : "Tepat waktu. "}Presensi hari ini tersimpan.
             </p>
           )}
         </div>
         <div className="flex flex-wrap gap-3">
-          <button type="button" onClick={() => setJamMasuk(new Date())} disabled={jamMasuk !== null} className="tombol-utama px-6 py-3 text-lg">
+          <button
+            type="button"
+            onClick={tanganiMasuk}
+            disabled={jamMasuk !== null || sedangMenyimpan}
+            className="tombol-utama px-6 py-3 text-lg"
+          >
             <Ikon nama="masuk" />
-            Catat Masuk
+            {sedangMenyimpan && jamMasuk === null ? "Menyimpan..." : "Catat Masuk"}
           </button>
           <button
             type="button"
-            onClick={() => setJamPulang(new Date())}
-            disabled={jamMasuk === null || jamPulang !== null}
+            onClick={tanganiPulang}
+            disabled={jamMasuk === null || jamPulang !== null || sedangMenyimpan}
             className="tombol-kunyit px-6 py-3 text-lg"
           >
             <Ikon nama="keluar" />
-            Catat Pulang
+            {sedangMenyimpan && jamPulang === null ? "Menyimpan..." : "Catat Pulang"}
           </button>
         </div>
       </section>
