@@ -1,89 +1,206 @@
+
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAmbilData } from "@/lib/useAmbilData";
 import { ambilRekapBulanan } from "@/lib/data";
-import { bulanIni, formatBulan } from "@/lib/waktu";
-import KepalaHalaman from "@/components/KepalaHalaman";
+import { bulanIni } from "@/lib/waktu";
 import Memuat from "@/components/Memuat";
-import Kosong from "@/components/Kosong";
-import Gagal from "@/components/Gagal";
 
-// Laporan bulanan (PRD 4.9). Tanpa pemeriksaan peran, lihat Sesi 6 / Monthly report (PRD 4.9). No role check, see Session 6
-export default function HalamanLaporan() {
-  const router = useRouter();
+function HalamanLaporanIsi() {
+  const searchParams = useSearchParams();
+  const dariAlamat = searchParams.get("bulan");
 
-  // Bulan disimpan di alamat (?bulan=2026-09) / Month lives in the URL (?bulan=2026-09)
-  const dariAlamat = useSearchParams().get("bulan");
-  const bulan = /^\d{4}-\d{2}$/.test(dariAlamat ?? "") ? dariAlamat : bulanIni();
+  const bulanAwal =
+    /^\d{4}-\d{2}$/.test(dariAlamat ?? "")
+      ? dariAlamat
+      : bulanIni();
 
-  const { status, data, cobaLagi } = useAmbilData(() => ambilRekapBulanan(bulan), [bulan]);
+  const [bulanDipilih, setBulanDipilih] = useState(bulanAwal);
 
-  // Hari hadir terbanyak jadi patokan panjang batang / The highest attendance sets the full bar length
-  const terbanyak = data ? Math.max(1, ...data.map((r) => r.hariHadir)) : 1;
+  const bulan =
+    /^\d{4}-\d{2}$/.test(bulanDipilih)
+      ? bulanDipilih
+      : bulanAwal;
+
+  const { status, data, cobaLagi } = useAmbilData(
+    () => ambilRekapBulanan(bulan),
+    [bulan]
+  );
+
+  function ubahBulan(event) {
+    setBulanDipilih(event.target.value);
+  }
 
   return (
-    <div className="space-y-8">
-      <KepalaHalaman judul="Laporan" keterangan={`Rekap kehadiran ${formatBulan(bulan)}. Ganti bulan untuk melihat rekap lain.`} warna="tinta" ikon="grafik">
-        <label className="flex items-center gap-3 rounded-xl border border-tinta/10 bg-panel px-3 py-1.5 font-bold text-tinta">
-          Bulan
-          <input
-            type="month"
-            value={bulan}
-            onChange={(e) => e.target.value && router.replace(`/admin/laporan?bulan=${e.target.value}`)}
-            className="rounded-lg border border-tinta/15 px-2 py-1"
-          />
-        </label>
-      </KepalaHalaman>
+    <div className="space-y-6">
+      {/* Banner judul seperti halaman Data Karyawan */}
+      <section className="relative overflow-hidden rounded-2xl bg-tinta px-6 py-8 text-white shadow-kartu md:px-9 md:py-9">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-5 -top-10 text-[150px] font-black leading-none text-white/5"
+        >
+          HR
+        </div>
 
-      <section className="kartu overflow-hidden">
-        {status === "memuat" && <Memuat />}
+        <div className="relative z-10">
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+            Laporan Bulanan
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-white/80 md:text-base">
+            Rekap kehadiran, keterlambatan, dan cuti karyawan berdasarkan
+            periode yang dipilih.
+          </p>
+        </div>
+      </section>
+
+      {/* Kartu utama seperti halaman Data Karyawan */}
+      <section className="overflow-hidden rounded-2xl border border-tinta/10 bg-white shadow-kartu">
+        {/* Filter periode */}
+        <div className="flex flex-col gap-4 border-b border-tinta/10 p-5 md:flex-row md:items-end md:justify-between md:px-6">
+          <div>
+            <h2 className="text-lg font-bold text-tinta">
+              Rekap Kehadiran Karyawan
+            </h2>
+            <p className="mt-1 text-sm text-redup">
+              Pilih bulan untuk melihat ringkasan laporan.
+            </p>
+          </div>
+
+          <div className="w-full md:w-60">
+            <label
+              htmlFor="periode-laporan"
+              className="mb-2 block text-sm font-semibold text-tinta"
+            >
+              Periode laporan
+            </label>
+            <input
+              id="periode-laporan"
+              type="month"
+              value={bulan}
+              onChange={ubahBulan}
+              className="w-full rounded-xl border border-tinta/15 bg-white px-4 py-3 text-sm text-tinta outline-none transition focus:border-sedap focus:ring-2 focus:ring-sedap/15"
+            />
+          </div>
+        </div>
+
+        {/* Status memuat */}
+        {status === "memuat" && (
+          <div className="p-6">
+            <Memuat />
+          </div>
+        )}
+
+        {/* Status gagal */}
         {status === "gagal" && (
-          <div className="p-5">
-            <Gagal onCobaLagi={cobaLagi} />
+          <div className="m-5 rounded-xl border border-red-200 bg-red-50 p-6 text-center md:m-6">
+            <p className="font-semibold text-red-700">
+              Data laporan gagal dimuat.
+            </p>
+            <p className="mt-1 text-sm text-red-600">
+              Periksa koneksi dan izin akses Firebase, lalu coba lagi.
+            </p>
+            <button
+              type="button"
+              onClick={cobaLagi}
+              className="mt-4 rounded-xl bg-sedap px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+            >
+              Coba lagi
+            </button>
           </div>
         )}
-        {status === "berhasil" && data.length === 0 && (
-          <div className="p-5">
-            <Kosong teks="Belum ada karyawan terdaftar." />
-          </div>
-        )}
-        {status === "berhasil" && data.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="tabel">
-              <thead>
-                <tr>
-                  <th>Nama</th>
-                  <th className="w-2/5">Hari Hadir</th>
-                  <th className="text-right">Terlambat</th>
-                  <th className="text-right">Cuti Disetujui</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((r) => (
-                  <tr key={r.karyawanId} className="transition hover:bg-krem">
-                    <td className="font-bold text-tinta">{r.nama}</td>
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 text-right font-bold">{r.hariHadir}</span>
-                        <span className="h-3 flex-1 overflow-hidden rounded-full bg-latar">
-                          <span className="block h-full rounded-full bg-sedap" style={{ width: `${(r.hariHadir / terbanyak) * 100}%` }} />
-                        </span>
-                      </div>
-                    </td>
-                    <td className={`text-right font-bold ${r.terlambat > 0 ? "text-red-700" : "text-redup"}`}>{r.terlambat}</td>
-                    <td className="text-right">
-                      <span className={r.cutiDisetujui > 0 ? "rounded-lg bg-kunyit px-2 py-0.5 font-bold text-tinta" : "font-bold text-redup"}>
-                        {r.cutiDisetujui} hari
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+        {/* Data berhasil dimuat */}
+        {status !== "memuat" && status !== "gagal" && (
+          <>
+            {!data || data.length === 0 ? (
+              <div className="p-10 text-center">
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-kunyit/20 text-2xl text-tinta">
+                  <span aria-hidden="true">i</span>
+                </div>
+                <h3 className="mt-4 font-bold text-tinta">
+                  Belum ada data laporan
+                </h3>
+                <p className="mt-2 text-sm text-redup">
+                  Belum ada rekap karyawan untuk periode {bulan}.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[650px] text-left text-sm">
+                  <thead className="bg-slate-100 text-slate-600">
+                    <tr>
+                      <th className="px-5 py-4 font-semibold md:px-6">
+                        NAMA KARYAWAN
+                      </th>
+                      <th className="px-5 py-4 font-semibold">
+                        HARI HADIR
+                      </th>
+                      <th className="px-5 py-4 font-semibold">
+                        TERLAMBAT
+                      </th>
+                      <th className="px-5 py-4 font-semibold">
+                        HARI CUTI
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {data.map((item) => (
+                      <tr
+                        key={item.karyawanId}
+                        className="transition hover:bg-slate-50"
+                      >
+                        <td className="px-5 py-4 md:px-6">
+                          <div className="flex items-center gap-3">
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-tinta/10 bg-kunyit/20 font-bold text-tinta">
+                              {(item.nama || "K")
+                                .trim()
+                                .charAt(0)
+                                .toUpperCase()}
+                            </span>
+                            <span className="font-semibold text-tinta">
+                              {item.nama || "Tanpa nama"}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-700">
+                          {item.hariHadir ?? 0}
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-700">
+                          {item.terlambat ?? 0}
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-700">
+                          {item.cutiDisetujui ?? 0}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Informasi jumlah data */}
+            {data && data.length > 0 && (
+              <div className="border-t border-tinta/10 bg-white px-5 py-4 text-sm text-redup md:px-6">
+                Total {data.length} karyawan dalam laporan periode {bulan}.
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>
+  );
+}
+
+export default function HalamanLaporan() {
+  return (
+    <Suspense fallback={<Memuat />}>
+      <HalamanLaporanIsi />
+    </Suspense>
   );
 }

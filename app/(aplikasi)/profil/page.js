@@ -1,24 +1,43 @@
+
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Memuat from "@/components/Memuat";
 import { usePengguna } from "@/lib/pengguna";
 import KepalaHalaman from "@/components/KepalaHalaman";
 
-// Profil (PRD 4.5). Nama bisa diubah di tampilan, belum disimpan / Profile (PRD 4.5). Name is editable on screen, not saved yet
 export default function HalamanProfil() {
-  const { pengguna } = usePengguna();
-  const [nama, setNama] = useState(pengguna.nama);
+  const { pengguna, memuat } = usePengguna();
+  const [nama, setNama] = useState("");
   const [pesan, setPesan] = useState("");
+
+  useEffect(() => {
+    if (pengguna?.nama) {
+      setNama(pengguna.nama);
+    }
+  }, [pengguna?.nama]);
 
   function simpan(e) {
     e.preventDefault();
-    setPesan(nama.trim() ? "Nama diperbarui (contoh, belum tersimpan)." : "Nama wajib diisi.");
+
+    setPesan(
+      nama.trim()
+        ? "Nama diperbarui (contoh, belum tersimpan)."
+        : "Nama wajib diisi."
+    );
+  }
+
+  if (memuat) {
+    return <Memuat />;
+  }
+
+  if (!pengguna) {
+    return <Memuat />;
   }
 
   return (
     <div className="max-w-2xl space-y-8">
       <KepalaHalaman judul="Profil" keterangan="Nama bisa kamu ubah. Email dan peran diatur oleh HRD." warna="terong" ikon="orang" />
-
       <form onSubmit={simpan} className="kartu overflow-hidden">
         <div className="flex items-center gap-4 border-b border-tinta/10 bg-krem p-6">
           <span className="grid h-16 w-16 place-items-center rounded-2xl border border-tinta/10 bg-terong text-3xl font-bold text-white shadow-tipis">
@@ -43,12 +62,7 @@ export default function HalamanProfil() {
           </div>
           <div>
             <label htmlFor="peran" className="label">Peran</label>
-            <input
-              id="peran"
-              value={pengguna.role === "hrd" ? "HRD" : "Karyawan"}
-              readOnly
-              className="isian cursor-not-allowed bg-latar text-redup"
-            />
+            <input id="peran" value={pengguna.role === "hrd" ? "HRD" : "Karyawan"} readOnly className="isian cursor-not-allowed bg-latar text-redup" />
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <button type="submit" className="tombol-utama px-8">Simpan</button>

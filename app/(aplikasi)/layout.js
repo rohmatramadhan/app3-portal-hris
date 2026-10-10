@@ -1,31 +1,32 @@
-import { Suspense } from "react";
-import BilahAtas from "@/components/BilahAtas";
-import MenuSamping from "@/components/MenuSamping";
-import Memuat from "@/components/Memuat";
 
-/**
- * Tata letak semua halaman setelah masuk. Halaman /masuk dan /daftar ada di luar
- * folder (aplikasi), jadi tampil tanpa bilah atas dan menu.
- * Suspense wajib karena menu dan halaman membaca alamat (usePathname, useSearchParams).
- *
- * Layout for every signed-in page. /masuk and /daftar live outside the (aplikasi)
- * folder, so they render without the top bar and menu.
- * Suspense is required because the menu and pages read the URL (usePathname, useSearchParams).
- */
+import { Suspense } from "react";
+import MenuSamping from "@/components/MenuSamping";
+import HeaderAplikasi from "@/components/HeaderAplikasi";
+
 export default function LayoutAplikasi({ children }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <BilahAtas />
-      <div className="flex flex-1 flex-col md:flex-row">
-        <aside className="bg-tinta md:w-64 md:shrink-0">
-          <Suspense>
+    <div className="min-h-screen bg-krem">
+      {/* Navbar horizontal paling atas */}
+      <div className="bg-sedap px-4 py-3 text-white md:px-7">
+        <HeaderAplikasi />
+      </div>
+
+      {/* Sidebar dan konten di bawah navbar */}
+      <div className="min-h-[calc(100vh-70px)] md:flex">
+        <aside className="bg-tinta text-white md:min-h-[calc(100vh-70px)] md:w-64 md:shrink-0">
+          <Suspense
+            fallback={
+              <nav className="p-4 text-sm text-white/70">
+                Memuat menu...
+              </nav>
+            }
+          >
             <MenuSamping />
           </Suspense>
         </aside>
+
         <main className="min-w-0 flex-1 p-4 md:p-8">
-          <div className="mx-auto max-w-5xl">
-            <Suspense fallback={<Memuat />}>{children}</Suspense>
-          </div>
+          {children}
         </main>
       </div>
     </div>
